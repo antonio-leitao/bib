@@ -1,4 +1,5 @@
 mod commands;
+mod utils;
 
 use clap::{Parser, Subcommand};
 
@@ -10,11 +11,18 @@ struct Cli {
     command: Commands,
 }
 
+//Hall Whitehead, et al | 2023 | Evidence from sperm Whale language [PDF] [Note]
+
 #[derive(Subcommand)]
 enum Commands {
     /// Adds files to myapp
-    Add ,
-    Weave { query: Option<String> },
+    Add,
+    Xplore {
+        query: Option<String>,
+    },
+    Weave {
+        query: Option<String>,
+    },
 }
 fn main() {
     let cli = Cli::parse();
@@ -22,11 +30,8 @@ fn main() {
     // You can check for the existence of subcommands, and if found use their
     // matches just as you would the top level cmd
     match &cli.command {
-        Commands::Add=> {
-            commands::add::add()
-        }
-        Commands::Weave { query } => {
-            println!("'loom weave' was used, query is: {query:?}")
-        }
+        Commands::Add => commands::add::add(),
+        Commands::Weave { query } => commands::weave::weave(query.clone()),
+        Commands::Xplore { query } => commands::xplore::execute(query.clone()),
     }
 }
