@@ -73,6 +73,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
+name = "bib"
+version = "0.1.0"
+dependencies = [
+ "biblatex",
+ "clap",
+ "regex",
+ "sha2",
+ "sublime_fuzzy",
+ "termion",
+]
+
+[[package]]
 name = "biblatex"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -273,18 +285,6 @@ name = "linux-raw-sys"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57bcfdad1b858c2db7c38303a6d2ad4dfaf5eb53dfeb0910128b2c26d6158503"
-
-[[package]]
-name = "loom"
-version = "0.1.0"
-dependencies = [
- "biblatex",
- "clap",
- "regex",
- "sha2",
- "sublime_fuzzy",
- "termion",
-]
 
 [[package]]
 name = "memchr"
