@@ -1,15 +1,14 @@
+// use crate::utils::io::read_bibliography;
+// READ bibfile => Vec<Paper>
+// WRITE Vec<Paper> => bibfile.bib
+use crate::base::Paper;
+use crate::utils::settings;
+use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person, RetrievalError};
 use regex::Regex;
-
-#[derive(Clone)]
-pub struct Paper {
-    pub author: String,
-    pub year: i64,
-    pub title: String,
-    pub pdf: bool,
-    pub note: bool,
-    pub slug: String,
-}
+use std::fs;
+use std::io::{Read, Write};
+use std::path::Path;
 
 fn parse_year(entry: &Entry) -> Result<i64, RetrievalError> {
     entry.get_as::<i64>("year")
@@ -48,19 +47,20 @@ fn remove_non_alphabetic(input: &str) -> String {
 fn format_slug(authors: String, year: i64, title: String) -> String {
     format!("{} {} {}", authors, year, title)
 }
+
 fn parse_entry(entry: Entry) -> Result<Paper, RetrievalError> {
     let (author, author_line) = parse_author(&entry)?;
     let year = parse_year(&entry)?;
     let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
-
     let slug = format_slug(author_line, year, remove_non_alphabetic(&title));
+    //TODO GET META HEREEEEE
     Ok(Paper {
         author,
         year,
         title,
         slug,
-        pdf: true,
-        note: false,
+        meta: None,
+        entry,
     })
 }
 
@@ -74,3 +74,25 @@ pub fn parse_bibliography(bibliography: Bibliography) -> Vec<Paper> {
     }
     papers
 }
+
+pub fn read_bibtex(bib_content: &str) -> Result<Bibliography> {
+    Bibliography::parse(&bib_content)
+        .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))
+}
+
+pub fn read_bibliography() -> Result<Bibliography> {
+    let base_dir = settings::base_dir()?;
+    let bib_path = Path::new(&base_dir).join("bibliography.bib");
+    let mut bib_content = String::new();
+    if !bib_path.exists() {
+        // If the draft file doesn't exist, create an empty one
+        let mut file = fs::File::create(&bib_path)?;
+        file.write_all(b"")?;
+    } else {
+        // If the draft file exists, open and read its content
+        let mut file = fs::File::open(&bib_path)?;
+        file.read_to_string(&mut bib_content)?;
+    }
+    read_bibtex(&bib_content)
+}
+

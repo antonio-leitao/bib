@@ -1,3 +1,2 @@
+pub mod search;
 pub mod add;
-pub mod xplore;
-pub mod weave;
