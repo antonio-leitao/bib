@@ -1,2 +1,3 @@
-pub mod search;
 pub mod add;
+pub mod search;
+pub mod synch;

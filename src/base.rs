@@ -1,14 +1,28 @@
+use crate::utils::settings;
 use crate::utils::ui;
+use anyhow::Result;
 use biblatex::Entry;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::io::{Read, Write};
+use std::path::Path;
 use termion::color;
 // Define paper and Note
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetaData {
     pub semantic_id: Option<String>,
     pub pdf: Option<String>,
     pub notes: Option<Vec<u128>>,
     //last accessed
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Note {
+    pub id: String,
+    pub reference: String,
+    pub embedding: Vec<f32>,
 }
 
 #[derive(Clone)]
@@ -20,6 +34,55 @@ pub struct Paper {
     pub meta: Option<MetaData>,
     pub entry: Entry,
 }
+
+pub fn save<T: Serialize>(data: &HashMap<String, T>, filename: &str) -> Result<()> {
+    let base_dir = settings::base_dir()?;
+    let data_dir_path = Path::new(&base_dir);
+
+    let data_file_path = data_dir_path.join(filename);
+    let mut file = fs::File::create(data_file_path)?;
+
+    // Serialize the HashMap<String, Note> to bytes and write it to the file
+    let data_bytes = bincode::serialize(data)?;
+    file.write_all(&data_bytes)?;
+
+    Ok(())
+}
+
+pub fn read_notes() -> Result<HashMap<String, Note>> {
+    let base_dir = settings::base_dir()?;
+    let data_dir_path = Path::new(&base_dir);
+    let data_file_path = data_dir_path.join("data.bin");
+
+    if data_file_path.exists() {
+        let mut data_bytes = Vec::new();
+        fs::File::open(data_file_path)?.read_to_end(&mut data_bytes)?;
+        // Deserialize the bytes into a HashMap<String, Note>
+        let data = bincode::deserialize(&data_bytes)?;
+        Ok(data)
+    } else {
+        // Return an empty HashMap if the file does not exist
+        Ok(HashMap::new())
+    }
+}
+
+pub fn read_metadata() -> Result<HashMap<String, MetaData>> {
+    let base_dir = settings::base_dir()?;
+    let data_dir_path = Path::new(&base_dir);
+    let data_file_path = data_dir_path.join("metadata.bin");
+
+    if data_file_path.exists() {
+        let mut data_bytes = Vec::new();
+        fs::File::open(data_file_path)?.read_to_end(&mut data_bytes)?;
+        // Deserialize the bytes into a HashMap<String, Note>
+        let data = bincode::deserialize(&data_bytes)?;
+        Ok(data)
+    } else {
+        // Return an empty HashMap if the file does not exist
+        Ok(HashMap::new())
+    }
+}
+
 impl Paper {
     fn get_slack(&self) -> usize {
         let mut slack: usize = 0;

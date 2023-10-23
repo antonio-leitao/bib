@@ -1,4 +1,4 @@
-use crate::base::Paper;
+use crate::base::{self, Paper};
 use crate::semantic;
 use crate::utils::bibfile;
 use crate::utils::ui;
@@ -30,11 +30,20 @@ fn add_paper_to_library(paper: Paper, local: bool) -> Result<()> {
         bibliography = match bibfile::read_local_bibliography() {
             Ok(local_bib) => local_bib,
             Err(_) => Bibliography::new(),
-        }
-    } else {
-        println!("Adding papers to MAIN library: {}", paper.title);
-        bibliography = bibfile::read_bibliography().expect("Unable to read main library");
+        };
+        bibliography.insert(paper.entry.clone());
     }
+    //atttempt to add metadata
+    let mut metadata = base::read_metadata()?;
+    match paper.meta {
+        Some(data) => {
+            metadata.insert(paper.entry.key.clone(), data);
+        }
+        None => (),
+    };
+    //add to main library
+    println!("Adding papers to MAIN library: {}", paper.title);
+    bibliography = bibfile::read_bibliography().expect("Unable to read main library");
     bibliography.insert(paper.entry);
     bibfile::save_bibliography(bibliography, local)
 }

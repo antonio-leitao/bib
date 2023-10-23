@@ -1,7 +1,7 @@
 // use crate::utils::io::read_bibliography;
 // READ bibfile => Vec<Paper>
 // WRITE Vec<Paper> => bibfile.bib
-use crate::base::{MetaData, Paper};
+use crate::base::{self, MetaData, Paper};
 use crate::utils::settings;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person, RetrievalError};
@@ -53,8 +53,6 @@ pub fn parse_entry(entry: Entry, meta: Option<MetaData>) -> Result<Paper, Retrie
     let year = parse_year(&entry)?;
     let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
     let slug = format_slug(author_line, year, remove_non_alphabetic(&title));
-    //TODO GET META HEREEEEE
-    //if no metadata,attempt to fetch
     Ok(Paper {
         author,
         year,
@@ -67,8 +65,9 @@ pub fn parse_entry(entry: Entry, meta: Option<MetaData>) -> Result<Paper, Retrie
 
 pub fn parse_bibliography(bibliography: Bibliography) -> Vec<Paper> {
     let mut papers: Vec<Paper> = Vec::new();
+    let all_metadata = base::read_metadata().expect("cannot read metadata");
     for entry in bibliography.into_iter() {
-        let metadata = None; //this should be something like a get.
+        let metadata = all_metadata.get(&entry.key).cloned();
         match parse_entry(entry, metadata) {
             Ok(paper) => papers.push(paper),
             Err(_) => continue,
@@ -77,11 +76,6 @@ pub fn parse_bibliography(bibliography: Bibliography) -> Vec<Paper> {
     papers
 }
 
-//FUNCTIONS TODO
-//save bibliography(given file)
-//delete_from_bibliography(citationkey)
-//addto_bibliography (given key)
-//add pdf
 
 pub fn read_bibtex(bib_content: &str) -> Result<Bibliography> {
     Bibliography::parse(&bib_content)
