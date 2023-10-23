@@ -5,7 +5,7 @@ use termion::color;
 
 #[derive(Clone)]
 pub struct MetaData {
-    pub usemantic_id: Option<String>,
+    pub semantic_id: Option<String>,
     pub pdf: Option<String>,
     pub notes: Option<Vec<u128>>,
     //last accessed

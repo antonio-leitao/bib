@@ -8,6 +8,13 @@ use termion::raw::{IntoRawMode, RawTerminal};
 
 const SUBDUED: termion::color::Rgb = color::Rgb(83, 110, 122);
 const MUTED: termion::color::Rgb = color::Rgb(46, 60, 68);
+
+pub enum Action<T: Item> {
+    Submit(T),
+    Open(T),
+    Remove(T),
+}
+
 pub trait Item {
     fn display(&self, max_width: u16) -> String;
     fn disabled(&self, max_width: u16) -> String;
@@ -120,32 +127,6 @@ fn view_pager(pager: &Pager, stdout: &mut RawTerminal<Stdout>) {
     }
     writeln!(stdout, "\r").unwrap();
 }
-fn view_help(stdout: &mut RawTerminal<Stdout>) {
-    let mut help: String = String::from("");
-    let help_options: Vec<(&str, &str)> = vec![
-        ("enter", "select"),
-        ("↑/↓", "move"),
-        ("←/→", "next"),
-        ("/", "filter"),
-        ("esc", "quit"),
-    ];
-    for (key, summary) in help_options.iter() {
-        help.push_str(&format!(
-            "{}{} {}{}{}{}",
-            color::Fg(SUBDUED),
-            key,
-            color::Fg(MUTED),
-            summary,
-            if help_options.last() == Some(&(key, summary)) {
-                ""
-            } else {
-                " • "
-            },
-            color::Fg(color::Reset),
-        ));
-    }
-    write!(stdout, "\n    {}", help).unwrap();
-}
 
 #[derive(PartialEq)]
 enum State {
@@ -153,7 +134,6 @@ enum State {
     Writing,
     Quit,
 }
-
 struct Pager {
     current_page: usize,
     n_pages: usize,
@@ -188,6 +168,22 @@ fn unwrap_color(color_name: &str) -> Box<dyn color::Color> {
     };
     color_enum
 }
+fn load_options(allow_open: bool, allow_delete: bool) -> Vec<(String, String)> {
+    let mut help_options = vec![("enter".to_string(), "select".to_string())];
+    if allow_open {
+        help_options.push(("o".to_string(), "open".to_string()))
+    }
+    if allow_delete {
+        help_options.push(("d".to_string(), "delete".to_string()))
+    }
+    help_options.extend(vec![
+        ("↑/↓".to_string(), "move".to_string()),
+        ("←/→".to_string(), "next".to_string()),
+        ("/".to_string(), "filter".to_string()),
+        ("esc".to_string(), "quit".to_string()),
+    ]);
+    help_options
+}
 struct Model<T>
 where
     T: Item + Clone,
@@ -195,7 +191,7 @@ where
     state: State,
     cursor: usize,
     items: Option<Vec<T>>,
-    selected: Option<T>,
+    selected: Option<Action<T>>,
     library: Vec<T>,
     stdout: RawTerminal<Stdout>,
     query: String,
@@ -203,6 +199,9 @@ where
     width: u16,
     action: String,
     color: String,
+    help_options: Vec<(String, String)>,
+    allow_open: bool,
+    allow_delete: bool,
 }
 impl<T> Model<T>
 where
@@ -214,9 +213,12 @@ where
         library: Vec<T>,
         stdout: RawTerminal<Stdout>,
         query: String,
+        allow_open: bool,
+        allow_delete: bool,
     ) -> Self {
         let items = apply_filter(&query, &library);
         let pager = Pager::new(&items, 30);
+        let help_options = load_options(allow_open, allow_delete);
         let (width, _) = termion::terminal_size().unwrap();
         Model {
             state: State::Browsing,
@@ -230,6 +232,9 @@ where
             width,
             action,
             color,
+            help_options,
+            allow_open,
+            allow_delete,
         }
     }
     fn init(&mut self) {
@@ -289,6 +294,26 @@ where
         )
         .unwrap()
     }
+    fn view_help(&mut self) {
+        let mut help: String = String::from("");
+        for (key, summary) in self.help_options.iter() {
+            help.push_str(&format!(
+                "{}{} {}{}{}{}",
+                color::Fg(SUBDUED),
+                key,
+                color::Fg(MUTED),
+                summary,
+                if self.help_options.last() == Some(&(key.to_string(), summary.to_string())) {
+                    ""
+                } else {
+                    " • "
+                },
+                color::Fg(color::Reset),
+            ));
+        }
+        write!(self.stdout, "\n    {}", help).unwrap();
+    }
+
     fn view(&mut self) {
         //clear screen
         write!(
@@ -315,7 +340,7 @@ where
                 if self.pager.n_pages > 1 {
                     view_pager(&self.pager, &mut self.stdout);
                 }
-                view_help(&mut self.stdout)
+                self.view_help()
             }
             State::Browsing => {
                 self.view_header();
@@ -332,7 +357,7 @@ where
                 if self.pager.n_pages > 1 {
                     view_pager(&self.pager, &mut self.stdout);
                 }
-                view_help(&mut self.stdout)
+                self.view_help()
             }
             State::Quit => {
                 write!(self.stdout, "").unwrap();
@@ -362,7 +387,17 @@ where
                 self.cursor_right();
             }
             Key::Char('\n') => {
-                self.select();
+                self.submit();
+            }
+            Key::Char('o') => {
+                if self.allow_open {
+                    self.open();
+                }
+            }
+            Key::Char('d') => {
+                if self.allow_delete {
+                    self.remove();
+                }
             }
             Key::Char('/') => self.state = State::Writing,
             Key::Char('q') | Key::Esc | Key::Ctrl('c') => self.state = State::Quit,
@@ -399,9 +434,29 @@ where
         self.cursor = min(max_index, self.cursor + self.pager.per_page);
         self.update_pager();
     }
-    fn select(&mut self) {
-        self.selected = match &self.items {
+    fn select(&mut self) -> Option<T> {
+        match &self.items {
             Some(papers) => Some(papers[self.cursor].clone()),
+            None => None,
+        }
+    }
+    fn submit(&mut self) {
+        self.selected = match self.select() {
+            Some(paper) => Some(Action::Submit(paper)),
+            None => None,
+        };
+        self.state = State::Quit;
+    }
+    fn remove(&mut self) {
+        self.selected = match self.select() {
+            Some(paper) => Some(Action::Remove(paper)),
+            None => None,
+        };
+        self.state = State::Quit;
+    }
+    fn open(&mut self) {
+        self.selected = match self.select() {
+            Some(paper) => Some(Action::Open(paper)),
             None => None,
         };
         self.state = State::Quit;
@@ -449,7 +504,9 @@ pub fn run_ui<T: Item + Clone>(
     items: Vec<T>,
     initial_query: String,
     blank_slate: bool,
-) -> Option<T> {
+    allow_open: bool,
+    allow_delete: bool,
+) -> Option<Action<T>> {
     //temporary solution
     let stdin = io::stdin();
     let stdout = io::stdout().into_raw_mode().unwrap();
@@ -457,7 +514,15 @@ pub fn run_ui<T: Item + Clone>(
     if !blank_slate {
         query_value.push_str(&initial_query);
     }
-    let mut model = Model::new(action, color, items, stdout, query_value);
+    let mut model = Model::new(
+        action,
+        color,
+        items,
+        stdout,
+        query_value,
+        allow_open,
+        allow_delete,
+    );
     model.init();
     //every time a key is clicked
     for c in stdin.keys() {

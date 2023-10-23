@@ -1,14 +1,14 @@
 // use crate::utils::io::read_bibliography;
 // READ bibfile => Vec<Paper>
 // WRITE Vec<Paper> => bibfile.bib
-use crate::base::Paper;
+use crate::base::{MetaData, Paper};
 use crate::utils::settings;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person, RetrievalError};
 use regex::Regex;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn parse_year(entry: &Entry) -> Result<i64, RetrievalError> {
     entry.get_as::<i64>("year")
@@ -48,18 +48,19 @@ fn format_slug(authors: String, year: i64, title: String) -> String {
     format!("{} {} {}", authors, year, title)
 }
 
-fn parse_entry(entry: Entry) -> Result<Paper, RetrievalError> {
+pub fn parse_entry(entry: Entry, meta: Option<MetaData>) -> Result<Paper, RetrievalError> {
     let (author, author_line) = parse_author(&entry)?;
     let year = parse_year(&entry)?;
     let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
     let slug = format_slug(author_line, year, remove_non_alphabetic(&title));
     //TODO GET META HEREEEEE
+    //if no metadata,attempt to fetch
     Ok(Paper {
         author,
         year,
         title,
         slug,
-        meta: None,
+        meta,
         entry,
     })
 }
@@ -67,7 +68,8 @@ fn parse_entry(entry: Entry) -> Result<Paper, RetrievalError> {
 pub fn parse_bibliography(bibliography: Bibliography) -> Vec<Paper> {
     let mut papers: Vec<Paper> = Vec::new();
     for entry in bibliography.into_iter() {
-        match parse_entry(entry) {
+        let metadata = None; //this should be something like a get.
+        match parse_entry(entry, metadata) {
             Ok(paper) => papers.push(paper),
             Err(_) => continue,
         }
@@ -75,9 +77,39 @@ pub fn parse_bibliography(bibliography: Bibliography) -> Vec<Paper> {
     papers
 }
 
+//FUNCTIONS TODO
+//save bibliography(given file)
+//delete_from_bibliography(citationkey)
+//addto_bibliography (given key)
+//add pdf
+
 pub fn read_bibtex(bib_content: &str) -> Result<Bibliography> {
     Bibliography::parse(&bib_content)
         .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))
+}
+
+pub fn save_bibliography(bibliography: Bibliography, local: bool) -> Result<()> {
+    let bib_path: PathBuf;
+    if local {
+        bib_path = Path::new("bibliography.bib").to_path_buf();
+    } else {
+        let base_dir = settings::base_dir()?;
+        bib_path = Path::new(&base_dir).join("bibliography.bib");
+    }
+    let mut file = fs::File::create(bib_path)?;
+    file.write_all(bibliography.to_biblatex_string().as_bytes())?;
+    Ok(())
+}
+//Add a local here
+pub fn read_local_bibliography() -> Result<Bibliography> {
+    let bib_path = Path::new("bibliography.bib").to_path_buf();
+    let mut bib_content = String::new();
+    if !bib_path.exists() {
+        return Err(anyhow!("there is no bilbiography.bib in the directory"));
+    }
+    let mut file = fs::File::open(&bib_path)?;
+    file.read_to_string(&mut bib_content)?;
+    read_bibtex(&bib_content)
 }
 
 pub fn read_bibliography() -> Result<Bibliography> {
@@ -95,4 +127,3 @@ pub fn read_bibliography() -> Result<Bibliography> {
     }
     read_bibtex(&bib_content)
 }
-

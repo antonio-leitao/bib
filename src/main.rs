@@ -76,10 +76,10 @@ enum Commands {
         online: bool,
         /// Alter this file instead of main
         #[clap(short, long, default_value_t = false)]
-        this: bool,
+        local: bool,
     },
     /// Fetch online for missing pdfs
-    Fetch,
+    Synch,
     /// Merge bibfile in working directory with bibliography
     Yeet,
     /// Create or (append to) bibfile from selected references
@@ -92,7 +92,7 @@ enum Commands {
     More {
         /// More like the bibfile in this directory
         #[clap(short, long, default_value_t = false)]
-        this: bool,
+        local: bool,
     },
 }
 fn main() {
@@ -116,14 +116,14 @@ fn main() {
         Commands::Search {
             query,
             online,
-            this,
-        } => commands::search::search(query, online, this),
-        Commands::Fetch => println!("Fetching Papers"),
+            local,
+        } => commands::search::search(query, online, local),
+        Commands::Synch => println!("Fetching Papers"),
         Commands::Yeet => println!("Merging bibifile to library"),
         Commands::Yank { query } => {
             // this is just search + send to current dir
             println!("Searching and selecting references to create bibfile")
         }
-        Commands::More { this } => println!("Finding more relevant papers"),
+        Commands::More { local } => println!("Finding more relevant papers"),
     }
 }

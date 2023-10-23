@@ -1,6 +1,6 @@
-use crate::base::Paper;
-use crate::utils::bibfile::{parse_bibliography, read_bibtex};
-use anyhow::Result;
+use crate::base::{MetaData, Paper};
+use crate::utils::bibfile::{parse_entry, read_bibtex};
+use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry};
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -16,15 +16,13 @@ struct SemanticResponse {
 struct Payload {
     #[serde(rename = "paperId")]
     scholar_id: String,
-    #[serde(rename = "openAccessPdf")]
-    pdf: Option<HashMap<String, String>>,
     #[serde(rename = "citationStyles")]
     citation: Option<HashMap<String, String>>,
 }
 
 fn make_request(query: &str, limit: usize) -> Result<SemanticResponse, reqwest::Error> {
     let url = format!(
-        "https://api.semanticscholar.org/graph/v1/paper/search?query={}&limit={}&fields=openAccessPdf,citationStyles",
+        "https://api.semanticscholar.org/graph/v1/paper/search?query={}&limit={}&fields=citationStyles",
         query, limit
     );
     // Fetch the API key from the environment variable
@@ -36,12 +34,26 @@ fn make_request(query: &str, limit: usize) -> Result<SemanticResponse, reqwest::
     response.json()
 }
 
-fn read_citation(payload: Payload) -> Option<Bibliography> {
-    let citation = payload.citation?;
+fn read_citation(payload: &Payload) -> Option<Bibliography> {
+    let citation = payload.citation.clone()?;
     let bibtex = citation.get("bibtex")?;
     match read_bibtex(&bibtex) {
         Ok(bib) => Some(bib),
         Err(_) => None,
+    }
+}
+
+fn parse_online_bibliography(bibliography: Bibliography, semantic_id: String) -> Result<Paper> {
+    let meta = MetaData {
+        semantic_id: Some(semantic_id),
+        pdf: None,
+        notes: None,
+    };
+    match bibliography.into_iter().next() {
+        Some(entry) => {
+            parse_entry(entry, Some(meta)).map_err(|err| anyhow!("Error reading paper {}", err))
+        }
+        None => Err(anyhow!("Error reading paper")),
     }
 }
 
@@ -53,12 +65,14 @@ pub fn query_papers(query: &str, limit: usize) -> Result<Vec<Paper>> {
     let response = make_request(query, limit)?;
     let mut papers = Vec::new();
     for paper in response.data {
-        let bibliography = match read_citation(paper) {
-            Some(entry) => entry,
+        let bibliography = match read_citation(&paper) {
+            Some(bib) => bib,
             None => continue,
         };
-        let paper = parse_bibliography(bibliography);
-        papers.extend(paper)
+        match parse_online_bibliography(bibliography, paper.scholar_id) {
+            Ok(paper) => papers.push(paper),
+            Err(_) => continue,
+        }
     }
     Ok(papers)
 }
