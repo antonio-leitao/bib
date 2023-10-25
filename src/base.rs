@@ -1,4 +1,4 @@
-use crate::utils::settings;
+use crate::settings;
 use crate::utils::ui;
 use anyhow::Result;
 use biblatex::Entry;

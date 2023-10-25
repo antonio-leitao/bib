@@ -1,5 +1,8 @@
 use std::cmp::min;
 use std::io::{self, Stdout, Write};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 use sublime_fuzzy::best_match;
 use termion::color;
 use termion::event::Key;
@@ -498,7 +501,7 @@ where
     }
 }
 
-pub fn run_ui<T: Item + Clone>(
+pub fn display_list<T: Item + Clone>(
     action: String,
     color: String,
     items: Vec<T>,
@@ -535,4 +538,41 @@ pub fn run_ui<T: Item + Clone>(
     //clean screen
     write!(model.stdout, "{}", termion::cursor::Show).unwrap();
     model.selected
+}
+
+pub fn display_spinner<F, T>(f: F, text: &str) -> T
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    // Create a channel to communicate with the spinner thread
+    let (sender, receiver) = mpsc::channel();
+
+    // Clone the text for the spinner thread
+    let spinner_text = text.to_string();
+
+    // Spawn the spinner thread
+    thread::spawn(move || {
+        let spinner = vec!['-', '\\', '|', '/'];
+        let mut i = 0;
+        loop {
+            print!("\r{}... {} ", spinner_text, spinner[i]);
+            i = (i + 1) % spinner.len();
+            std::io::stdout().flush().unwrap();
+
+            // Check for a stop signal from the main thread
+            if receiver.try_recv().is_ok() {
+                break;
+            }
+
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    let result = f();
+    // Send a stop signal to the spinner thread
+    sender.send(()).unwrap();
+    // Clear the spinner line
+    println!("\r{}... Done", text);
+    result
 }

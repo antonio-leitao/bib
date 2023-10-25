@@ -1,8 +1,5 @@
-// use crate::utils::io::read_bibliography;
-// READ bibfile => Vec<Paper>
-// WRITE Vec<Paper> => bibfile.bib
 use crate::base::{self, MetaData, Paper};
-use crate::utils::settings;
+use crate::settings;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person, RetrievalError};
 use regex::Regex;
@@ -76,7 +73,6 @@ pub fn parse_bibliography(bibliography: Bibliography) -> Vec<Paper> {
     papers
 }
 
-
 pub fn read_bibtex(bib_content: &str) -> Result<Bibliography> {
     Bibliography::parse(&bib_content)
         .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))
@@ -94,7 +90,7 @@ pub fn save_bibliography(bibliography: Bibliography, local: bool) -> Result<()> 
     file.write_all(bibliography.to_biblatex_string().as_bytes())?;
     Ok(())
 }
-//Add a local here
+
 pub fn read_local_bibliography() -> Result<Bibliography> {
     let bib_path = Path::new("bibliography.bib").to_path_buf();
     let mut bib_content = String::new();

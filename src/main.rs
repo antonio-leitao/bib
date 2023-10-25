@@ -1,6 +1,7 @@
 mod base;
 mod commands;
 mod semantic;
+mod settings;
 mod utils;
 use clap::{Parser, Subcommand};
 
@@ -17,7 +18,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Append a new node to draft
-    Notes {
+    Note {
         /// Note content
         #[clap(value_name = "NOTE")]
         content: String,
@@ -78,10 +79,6 @@ enum Commands {
         #[clap(short, long, default_value_t = false)]
         local: bool,
     },
-    /// Fetch online for missing pdfs
-    Synch,
-    /// Merge bibfile in working directory with bibliography
-    Yeet,
     /// Create or (append to) bibfile from selected references
     Yank {
         /// Initial query for searching
@@ -94,11 +91,17 @@ enum Commands {
         #[clap(short, long, default_value_t = false)]
         local: bool,
     },
+    /// Clean up all notes and bibligraphies of haning references and pointers
+    Cleanup {
+        /// Consider also the bibfile in this directory
+        #[clap(short, long, default_value_t = false)]
+        local: bool,
+    },
 }
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Notes { content, force } => println!("Adding note to draft"),
+        Commands::Note { content, force } => println!("Adding note to draft"),
         Commands::Push { reference } => println!("pushing draft with reference"),
         Commands::Pull {
             query,
@@ -118,12 +121,11 @@ fn main() {
             online,
             local,
         } => commands::search::search(query, online, local),
-        Commands::Synch => println!("Fetching Papers"),
-        Commands::Yeet => println!("Merging bibifile to library"),
         Commands::Yank { query } => {
             // this is just search + send to current dir
             println!("Searching and selecting references to create bibfile")
         }
         Commands::More { local } => println!("Finding more relevant papers"),
+        Commands::Cleanup { local } => println!("Cleanup on aisle 3"),
     }
 }
