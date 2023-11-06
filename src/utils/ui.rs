@@ -1,6 +1,7 @@
 use std::cmp::min;
 use std::io::{self, Stdout, Write};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use sublime_fuzzy::best_match;
@@ -540,39 +541,43 @@ pub fn display_list<T: Item + Clone>(
     model.selected
 }
 
-pub fn display_spinner<F, T>(f: F, text: &str) -> T
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    // Create a channel to communicate with the spinner thread
-    let (sender, receiver) = mpsc::channel();
+pub struct Spinner {
+    running: Arc<AtomicBool>,
+    text: String,
+}
 
-    // Clone the text for the spinner thread
-    let spinner_text = text.to_string();
-
-    // Spawn the spinner thread
-    thread::spawn(move || {
-        let spinner = vec!['-', '\\', '|', '/'];
-        let mut i = 0;
-        loop {
-            print!("\r{}... {} ", spinner_text, spinner[i]);
-            i = (i + 1) % spinner.len();
-            std::io::stdout().flush().unwrap();
-
-            // Check for a stop signal from the main thread
-            if receiver.try_recv().is_ok() {
-                break;
-            }
-
-            thread::sleep(Duration::from_millis(100));
+impl Spinner {
+    pub fn new(text: String) -> Spinner {
+        Spinner {
+            running: Arc::new(AtomicBool::new(false)),
+            text,
         }
-    });
+    }
 
-    let result = f();
-    // Send a stop signal to the spinner thread
-    sender.send(()).unwrap();
-    // Clear the spinner line
-    println!("\r{}... Done", text);
-    result
+    pub fn start(&self) {
+        if self.running.load(Ordering::SeqCst) {
+            return;
+        }
+        let text = self.text.clone();
+        self.running.store(true, Ordering::SeqCst);
+        let running_clone = Arc::clone(&self.running);
+
+        thread::spawn(move || {
+            let spin_chars: Vec<char> = vec!['/', '-', '\\', '|'];
+            let mut spin_idx = 0;
+
+            while running_clone.load(Ordering::SeqCst) {
+                print!("{}... {}\r", text, spin_chars[spin_idx]);
+                spin_idx = (spin_idx + 1) % spin_chars.len();
+                std::io::stdout().flush().expect("Failed to flush stdout");
+                thread::sleep(Duration::from_millis(100));
+            }
+        });
+    }
+
+    pub fn stop(&self) {
+        self.running.store(false, Ordering::SeqCst);
+        println!("{}... Done", self.text); // Clear the spinner character
+        std::io::stdout().flush().expect("Failed to flush stdout");
+    }
 }

@@ -60,7 +60,10 @@ enum Commands {
         /// Reference to add
         #[clap(value_name = "REFERENCE")]
         reference: String,
-        /// Bibtex file
+        /// URL
+        #[clap(short, long, group = "from", default_value_t = false)]
+        url: bool,
+        /// DOI identifier
         #[clap(short, long, group = "from", default_value_t = false)]
         doi: bool,
         /// Arxiv ID
@@ -113,6 +116,7 @@ fn main() {
         Commands::Ammend => println!("Opening draft and allowing editing"),
         Commands::Add {
             reference,
+            url,
             doi,
             arxiv,
         } => println!("Adding new stuff to lib"),

@@ -1,4 +1,5 @@
 use crate::base::{self, MetaData, Paper};
+use crate::semantic::query::query_single_paper;
 use crate::settings;
 use crate::utils::bibfile;
 use anyhow::{anyhow, Result};
@@ -81,4 +82,13 @@ pub fn add_paper_to_library(paper: Paper, local: bool) -> Result<()> {
         insert_metadata(key, data)?;
     }
     Ok(())
+}
+pub fn add(reference: String, url: bool, doi: bool, arxiv: bool) {
+    if url || doi || arxiv {
+        // get online
+        let paper = query_single_paper(&reference, url, doi, arxiv);
+    } else {
+        // it is bibtex
+         
+    }
 }

@@ -28,12 +28,9 @@ fn search_online(query: String, here: bool) -> Result<()> {
     let mut items = query::query_batch_papers(&query, QUERY_LIMIT)?;
     //filter the ones that are already in the bibliography
     remove_already_present(bibliography, &mut items);
-    //run ui
     match ui::display_list(action, color, items, query, true, false, false) {
         Some(action) => match action {
-            ui::Action::Submit(paper) => {
-                ui::display_spinner(move || add_paper_to_library(paper, here), "Adding papers")
-            }
+            ui::Action::Submit(paper) => add_paper_to_library(paper, here),
             _ => Err(anyhow!("Action not allowed in online search")),
         },
         None => Ok(()),

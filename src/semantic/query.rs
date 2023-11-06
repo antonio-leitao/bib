@@ -1,5 +1,6 @@
 use crate::base::{MetaData, Paper};
 use crate::utils::bibfile::{parse_entry, read_bibtex};
+use crate::utils::ui;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry};
 use reqwest::blocking::Client;
@@ -114,12 +115,18 @@ fn parse_paper_request(payload: Payload) -> Result<Paper> {
 }
 
 pub fn query_single_paper(query: &str, url: bool, doi: bool, arxiv: bool) -> Result<Paper> {
+    let spinner = ui::Spinner::new("Searching online".to_string());
+    spinner.start();
     let payload = make_paper_request(query, arxiv, doi, url)?;
+    spinner.stop();
     parse_paper_request(payload)
 }
 
 pub fn query_batch_papers(query: &str, limit: usize) -> Result<Vec<Paper>> {
+    let spinner = ui::Spinner::new("Searching online".to_string());
+    spinner.start();
     let response = make_query_request(query, limit)?;
+    spinner.stop();
     let mut papers = Vec::new();
     for payload in response.data {
         match parse_paper_request(payload) {
