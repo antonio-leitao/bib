@@ -13,62 +13,52 @@ struct Cli {
     command: Commands,
 }
 
-//Hall Whitehead, et al | 2023 | Evidence from sperm Whale language [PDF] [Note]
-
 #[derive(Subcommand)]
 enum Commands {
-    /// Append a new node to draft
-    Note {
-        /// Note content
-        #[clap(value_name = "NOTE")]
-        content: String,
-        /// Add directly to library
-        #[clap(short, long, default_value_t = false)]
-        force: bool,
+    /// Manage bib stacks
+    Stack {
+        /// Name of stack
+        #[clap(value_name = "NAME")]
+        stack: Option<String>,
+        /// Delete selected stack
+        #[clap(short, long, group = "from", default_value_t = false)]
+        delete: bool,
+        /// Rename selected stack
+        #[clap(short, long, group = "from", default_value_t = false)]
+        rename: bool,
     },
-    /// Archive notes in draft
-    Push {
+    /// Switch into stack
+    Checkout {
+        /// Target stack name
+        #[clap(value_name = "NAME")]
+        stack: String,
+    },
+    /// Merge changes from target stack
+    Merge {
         /// Add new reference along with it
-        #[clap(short, long, value_name = "BIBTEX")]
-        reference: Option<String>,
+        #[clap(value_name = "STACK")]
+        stack: String,
     },
-    /// Semantic Search over all notes
-    Pull {
-        /// Query to embed
-        query: String,
-        /// Size of search results.
-        #[clap(short, long)]
-        number: Option<usize>,
-        /// Output file location. Prints to stdout if not specified.
-        #[clap(short, long)]
-        output: Option<String>,
-        /// Output bibfile location. Won't output bib if not specified.
-        #[clap(short, long)]
-        bibfile: Option<String>,
+    /// Push changes towards target stack
+    Yeet {
+        /// Add new reference along with it. Defaults to base.
+        #[clap(value_name = "STACK")]
+        stack: Option<String>,
     },
-    /// Manage library of notes
-    Peek {
-        /// Retrieve only notes that cite a specific reference.
-        #[clap(short, long, value_name = "REFERENCE")]
-        reference: Option<String>,
+    /// Fork current stack into new stack
+    Fork {
+        /// New stack name
+        #[clap(value_name = "NAME")]
+        stack: String,
     },
-    /// Edit draft
-    Ammend,
-    //bibmanage
-    /// Manually add a new reference
+    /// Manually add new reference
     Add {
-        /// Reference to add
-        #[clap(value_name = "REFERENCE")]
-        reference: String,
-        /// URL
-        #[clap(short, long, group = "from", default_value_t = false)]
-        url: bool,
-        /// DOI identifier
-        #[clap(short, long, group = "from", default_value_t = false)]
-        doi: bool,
-        /// Arxiv ID
-        #[clap(short, long, group = "from", default_value_t = false)]
-        arxiv: bool,
+        /// Url to pdf
+        #[clap(short, long, group = "from")]
+        url: Option<String>,
+        /// Path to Pdf in this computer
+        #[clap(short, long, group = "from")]
+        path: Option<String>,
     },
     /// Mutable search
     Search {
@@ -78,58 +68,32 @@ enum Commands {
         /// Search online instead of locally
         #[clap(short, long, default_value_t = false)]
         online: bool,
-        /// Alter this file instead of main
-        #[clap(short, long, default_value_t = false)]
-        local: bool,
-    },
-    /// Create or (append to) bibfile from selected references
-    Yank {
-        /// Initial query for searching
-        #[clap(short, long, value_name = "QUERY")]
-        query: Option<String>,
-    },
-    /// Find similar references
-    More {
-        /// More like the bibfile in this directory
-        #[clap(short, long, default_value_t = false)]
-        local: bool,
     },
     /// Clean up all notes and bibligraphies of haning references and pointers
-    Cleanup {
-        /// Consider also the bibfile in this directory
-        #[clap(short, long, default_value_t = false)]
-        local: bool,
-    },
+    Cleanup,
 }
 fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Note { content, force } => println!("Adding note to draft"),
-        Commands::Push { reference } => println!("pushing draft with reference"),
-        Commands::Pull {
-            query,
-            number,
-            output,
-            bibfile,
-        } => println!("Finfing notes that fit the query"),
-        Commands::Peek { reference } => println!("printing and exploring library"),
-        Commands::Ammend => println!("Opening draft and allowing editing"),
-        Commands::Add {
-            reference,
-            url,
-            doi,
-            arxiv,
-        } => println!("Adding new stuff to lib"),
-        Commands::Search {
-            query,
-            online,
-            local,
-        } => commands::search::search(query, online, local),
-        Commands::Yank { query } => {
-            // this is just search + send to current dir
-            println!("Searching and selecting references to create bibfile")
-        }
-        Commands::More { local } => println!("Finding more relevant papers"),
-        Commands::Cleanup { local } => println!("Cleanup on aisle 3"),
+        Commands::Stack {
+            stack,
+            delete,
+            rename,
+        } => match (stack, delete, rename) {
+            (None, _, _) => println!("  base\n* toread\n  phd"),
+            (Some(stack), true, _) => println!("deleting stack: {}", stack),
+            (Some(stack), _, true) => println!("renaming current stack to: {}", stack),
+            (_, _, _) => println!("Something's wrong in here"),
+        },
+        Commands::Checkout { stack } => println!("Switching into {}", stack),
+        Commands::Merge { stack } => println!("Merging stack {}", stack),
+        Commands::Yeet { stack } => match stack {
+            Some(stack) => println!("Yeeting current stack into {}", stack),
+            None => println!("Yeeting current stack into base"),
+        },
+        Commands::Fork { stack } => println!("Forking current stack under new name {}", stack),
+        Commands::Add { url, path } => println!("Adding new stuff to lib"),
+        Commands::Search { query, online } => println!("Searching for papers"),
+        Commands::Cleanup => println!("Cleanup on aisle 3"),
     }
 }
