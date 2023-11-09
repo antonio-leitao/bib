@@ -69,6 +69,8 @@ enum Commands {
         #[clap(short, long, default_value_t = false)]
         online: bool,
     },
+    /// Immutable search of most common
+    Peek,
     /// Clean up all notes and bibligraphies of haning references and pointers
     Cleanup,
 }
@@ -94,6 +96,7 @@ fn main() {
         Commands::Fork { stack } => println!("Forking current stack under new name {}", stack),
         Commands::Add { url, path } => println!("Adding new stuff to lib"),
         Commands::Search { query, online } => println!("Searching for papers"),
+        Commands::Peek => println!("Displaying recently viewd papers/notes"),
         Commands::Cleanup => println!("Cleanup on aisle 3"),
     }
 }
