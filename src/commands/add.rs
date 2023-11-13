@@ -95,13 +95,16 @@ fn add_paper_to_stack(paper: Paper) -> Result<()> {
     Ok(())
 }
 
-fn download_pdf_if_any(paper: &mut Paper) {
+fn attempt_pdf_download(paper: &mut Paper) {
     //if there is pdf download it
     if let Some(data) = paper.meta.as_mut() {
         if let Some(url) = &data.pdf {
             match download_pdf_from_url(&url, &paper.id) {
                 Ok(filename) => data.pdf = Some(filename),
-                Err(err) => println!("Didn't manage to download pdf.\n{}", err),
+                Err(err) => {
+                    println!("Didn't manage to download pdf.\n{}", err);
+                    data.pdf = None
+                }
             }
         }
     }
@@ -140,7 +143,7 @@ fn add_from_path(path: &str) -> Result<()> {
                 notes: None,
             }),
             Err(err) => {
-                println!("Didn't manage to copy pdf.\n{}",err);
+                println!("Didn't manage to copy pdf.\n{}", err);
                 None
             }
         };
@@ -164,7 +167,7 @@ fn add_bibtex() -> Result<()> {
 }
 
 pub fn add_online_paper(mut paper: Paper) -> Result<()> {
-    download_pdf_if_any(&mut paper);
+    attempt_pdf_download(&mut paper);
     add_paper_to_stack(paper)
 }
 

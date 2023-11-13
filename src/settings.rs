@@ -8,6 +8,7 @@ use toml;
 
 pub const QUERY_LIMIT: usize = 100;
 pub const EDITOR: &str = "vim";
+pub const PDF_VIEWER: &str = "zathura";
 
 fn directory_exists(directory_path: &str) -> bool {
     let path = Path::new(directory_path);
@@ -93,7 +94,7 @@ pub fn base_dir() -> Result<String> {
 }
 pub fn notes_dir() -> Result<String> {
     let stack = current_stack()?;
-    let path = format!("~/.bib/{}/notes", stack);
+    let path = format!("~/.bib/{}/notes/", stack);
     let dir = tilde(&path).to_string();
     if !directory_exists(&dir) {
         return Err(anyhow!(
@@ -105,7 +106,7 @@ pub fn notes_dir() -> Result<String> {
 }
 pub fn pdf_dir() -> Result<String> {
     let stack = current_stack()?;
-    let path = format!("~/.bib/{}/pdf", stack);
+    let path = format!("~/.bib/{}/pdf/", stack);
     let dir = tilde(&path).to_string();
     if !directory_exists(&dir) {
         return Err(anyhow!(

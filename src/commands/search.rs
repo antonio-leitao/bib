@@ -1,23 +1,51 @@
 use crate::base::Paper;
 use crate::commands::add::add_online_paper;
 use crate::semantic::query;
-use crate::settings::{self, QUERY_LIMIT};
+use crate::settings::{self, PDF_VIEWER, QUERY_LIMIT};
 use crate::utils::{bibfile, ui};
 use anyhow::anyhow;
 use anyhow::Result;
 use biblatex::Bibliography;
+use std::path::Path;
+use std::process::{exit, Command};
 
+fn open_pdf_in_subprocess(pdf_path: &str) {
+    // Use the "zathura" command to open the PDF file
+    println!("{}", pdf_path);
+    let result = Command::new(PDF_VIEWER).arg(pdf_path).spawn();
+
+    match result {
+        Ok(_) => {
+            println!("Opened PDF with zathura");
+        }
+        Err(err) => {
+            eprintln!("Error opening PDF with zathura: {}", err);
+            exit(1);
+        }
+    }
+}
 fn remove_already_present(bibfile: Bibliography, papers: &mut Vec<Paper>) {
     papers.retain(|paper| bibfile.get(&paper.entry.key).is_none());
 }
 fn show_notes(paper: Paper) {
     println!("Opening notes on paper: {}", paper.title);
 }
-fn open_pdf(paper: Paper) {
-    println!("Opening pdf on paper: {}", paper.title);
+fn open_pdf(paper: Paper) -> Result<()> {
+    let directory = settings::pdf_dir()?;
+    let filename = format!("{}.pdf", paper.id); // Use format! to create the filename
+    let file_path = Path::new(&directory).join(&filename);
+    // Check if the file already exists
+    if !file_path.exists() {
+        return Err(anyhow!("No PDF {} found on current stack\nAdd it manually with `bib add`", &filename));
+    };
+    let pdf_path = directory.to_string() + &filename;
+    open_pdf_in_subprocess(&pdf_path);
+    Ok(())
 }
+
 fn delete_paper(paper: Paper) {
     println!("Deleting paper from MAIN: {}", paper.title);
+    //search for pdf
 }
 
 fn search_online(query: String) -> Result<()> {
@@ -44,13 +72,12 @@ fn search_stack(query: String) -> Result<()> {
     let color = String::from("Yellow");
     match ui::display_list(action, color, items, query, false, true, true) {
         Some(action) => match action {
-            ui::Action::Submit(paper) => show_notes(paper),
-            ui::Action::Open(paper) => open_pdf(paper),
-            ui::Action::Remove(paper) => delete_paper(paper),
+            ui::Action::Open(paper) => Ok(show_notes(paper)),
+            ui::Action::Submit(paper) => open_pdf(paper),
+            ui::Action::Remove(paper) => Ok(delete_paper(paper)),
         },
-        None => (),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 pub fn search(query: String, online: bool) {
