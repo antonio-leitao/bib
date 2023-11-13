@@ -12,27 +12,20 @@ use termion::color;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetaData {
-    pub semantic_id: Option<String>,
     pub pdf: Option<String>,
-    pub notes: Option<Vec<u128>>,
+    pub notes: Option<String>,
     //last accessed
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Note {
-    pub id: String,
-    pub reference: String,
-    pub embedding: Vec<f32>,
 }
 
 #[derive(Clone)]
 pub struct Paper {
+    pub id: String,
     pub author: String,
     pub year: i64,
     pub title: String,
     pub slug: String,
-    pub meta: Option<MetaData>,
     pub entry: Entry,
+    pub meta: Option<MetaData>,
 }
 
 pub fn save<T: Serialize>(data: &HashMap<String, T>, filename: &str) -> Result<()> {
@@ -47,23 +40,6 @@ pub fn save<T: Serialize>(data: &HashMap<String, T>, filename: &str) -> Result<(
     file.write_all(&data_bytes)?;
 
     Ok(())
-}
-
-pub fn read_notes() -> Result<HashMap<String, Note>> {
-    let base_dir = settings::base_dir()?;
-    let data_dir_path = Path::new(&base_dir);
-    let data_file_path = data_dir_path.join("data.bin");
-
-    if data_file_path.exists() {
-        let mut data_bytes = Vec::new();
-        fs::File::open(data_file_path)?.read_to_end(&mut data_bytes)?;
-        // Deserialize the bytes into a HashMap<String, Note>
-        let data = bincode::deserialize(&data_bytes)?;
-        Ok(data)
-    } else {
-        // Return an empty HashMap if the file does not exist
-        Ok(HashMap::new())
-    }
 }
 
 pub fn read_metadata() -> Result<HashMap<String, MetaData>> {
@@ -170,6 +146,7 @@ impl ui::Item for Paper {
         self.slug.clone()
     }
 }
+
 fn fit_string_to_length(input: &str, max_length: usize) -> String {
     if input.len() <= max_length {
         return String::from(input);

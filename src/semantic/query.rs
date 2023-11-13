@@ -15,8 +15,6 @@ struct SemanticResponse {
 
 #[derive(Deserialize)]
 struct Payload {
-    #[serde(rename = "paperId")]
-    scholar_id: String,
     #[serde(rename = "openAccessPdf")]
     pdf: Option<HashMap<String, String>>,
     #[serde(rename = "citationStyles")]
@@ -25,34 +23,11 @@ struct Payload {
 
 //make single paper query (arxiv and id)
 
-fn make_paper_request(
-    query: &str,
-    arxiv: bool,
-    doi: bool,
-    url: bool,
-) -> Result<Payload, reqwest::Error> {
-    let base_url: String;
-    if url {
-        base_url = format!(
+fn make_arxiv_request(query: &str) -> Result<Payload, reqwest::Error> {
+    let base_url = format!(
             "https://api.semanticscholar.org/graph/v1/paper/URL:{}?&fields=citationStyles,openAccessPdf",
             query
         );
-    } else if arxiv {
-        base_url = format!(
-            "https://api.semanticscholar.org/graph/v1/paper/ARXIV:{}?&fields=citationStyles,openAccessPdf",
-            query
-        );
-    } else if doi {
-        base_url = format!(
-            "https://api.semanticscholar.org/graph/v1/paper/DOI:{}?&fields=citationStyles,openAccessPdf",
-            query
-        );
-    } else {
-        base_url = format!(
-            "https://api.semanticscholar.org/graph/v1/paper/{}?&fields=citationStyles,openAccessPdf",
-            query
-        );
-    }
     // Fetch the API key from the environment variable
     let api_key = env::var("SCHOLAR_KEY").expect("SCHOLAR_KEY environment variable not set");
     // Create a reqwest client and set the x-api-key header
@@ -91,7 +66,6 @@ fn read_metadata(paper: &Payload) -> MetaData {
         None => None,
     };
     MetaData {
-        semantic_id: Some(paper.scholar_id.clone()),
         pdf: url.cloned(),
         notes: None,
     }
@@ -114,10 +88,10 @@ fn parse_paper_request(payload: Payload) -> Result<Paper> {
     parse_entry(entry, Some(metadata)).map_err(|err| anyhow!(err))
 }
 
-pub fn query_single_paper(query: &str, url: bool, doi: bool, arxiv: bool) -> Result<Paper> {
+pub fn query_arxiv_paper(query: &str) -> Result<Paper> {
     let spinner = ui::Spinner::new("Searching online".to_string());
     spinner.start();
-    let payload = make_paper_request(query, arxiv, doi, url)?;
+    let payload = make_arxiv_request(query)?;
     spinner.stop();
     parse_paper_request(payload)
 }

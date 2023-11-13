@@ -51,12 +51,13 @@ pub fn parse_entry(entry: Entry, meta: Option<MetaData>) -> Result<Paper, Retrie
     let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
     let slug = format_slug(author_line, year, remove_non_alphabetic(&title));
     Ok(Paper {
+        id: entry.key.clone(),
+        entry,
         author,
         year,
         title,
         slug,
         meta,
-        entry,
     })
 }
 
@@ -89,17 +90,6 @@ pub fn save_bibliography(bibliography: Bibliography, local: bool) -> Result<()> 
     let mut file = fs::File::create(bib_path)?;
     file.write_all(bibliography.to_biblatex_string().as_bytes())?;
     Ok(())
-}
-
-pub fn read_local_bibliography() -> Result<Bibliography> {
-    let bib_path = Path::new("bibliography.bib").to_path_buf();
-    let mut bib_content = String::new();
-    if !bib_path.exists() {
-        return Err(anyhow!("there is no bilbiography.bib in the directory"));
-    }
-    let mut file = fs::File::open(&bib_path)?;
-    file.read_to_string(&mut bib_content)?;
-    read_bibtex(&bib_content)
 }
 
 pub fn read_bibliography() -> Result<Bibliography> {

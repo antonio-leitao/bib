@@ -173,9 +173,9 @@ fn unwrap_color(color_name: &str) -> Box<dyn color::Color> {
     color_enum
 }
 fn load_options(allow_open: bool, allow_delete: bool) -> Vec<(String, String)> {
-    let mut help_options = vec![("enter".to_string(), "select".to_string())];
+    let mut help_options = vec![("enter".to_string(), "submit".to_string())];
     if allow_open {
-        help_options.push(("o".to_string(), "open".to_string()))
+        help_options.push(("n".to_string(), "notes".to_string()))
     }
     if allow_delete {
         help_options.push(("d".to_string(), "delete".to_string()))
@@ -393,7 +393,7 @@ where
             Key::Char('\n') => {
                 self.submit();
             }
-            Key::Char('o') => {
+            Key::Char('n') => {
                 if self.allow_open {
                     self.open();
                 }
