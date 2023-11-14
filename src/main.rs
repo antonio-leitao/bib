@@ -140,7 +140,7 @@ fn main() {
         },
         Commands::Fork { stack } => println!("Forking current stack under new name {}", stack),
         Commands::Search { query, online } => commands::search::search(query, online),
-        Commands::Peek => println!("Displaying recently viewd papers/notes"),
+        Commands::Peek => commands::search::peek(),
         Commands::Export { notes, pdfs } => {
             println!("Exporting notes:{}, Exporting Pdfs:{}", notes, pdfs)
         }

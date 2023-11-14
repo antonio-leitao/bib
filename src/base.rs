@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use termion::color;
 // Define paper and Note
 
@@ -14,6 +15,7 @@ use termion::color;
 pub struct MetaData {
     pub pdf: Option<String>,
     pub notes: Option<String>,
+    pub last_accessed: Option<u64>,
     //last accessed
 }
 
@@ -26,6 +28,28 @@ pub struct Paper {
     pub slug: String,
     pub entry: Entry,
     pub meta: Option<MetaData>,
+}
+
+impl Paper {
+    pub fn update_last_accessed(&mut self) {
+        // Convert Instant to UNIX timestamp (u64)
+        let start = SystemTime::now();
+        let unix_timestamp = start
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+        // Update or create the metadata
+        if let Some(metadata) = &mut self.meta {
+            metadata.last_accessed = Some(unix_timestamp);
+        } else {
+            let new_metadata = MetaData {
+                pdf: None,
+                notes: None,
+                last_accessed: Some(unix_timestamp),
+            };
+            self.meta = Some(new_metadata);
+        }
+    }
 }
 
 pub fn save<T: Serialize>(data: &HashMap<String, T>, filename: &str) -> Result<()> {

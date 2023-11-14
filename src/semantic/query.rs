@@ -68,6 +68,7 @@ fn read_metadata(paper: &Payload) -> MetaData {
     MetaData {
         pdf: url.cloned(),
         notes: None,
+        last_accessed: None,
     }
 }
 

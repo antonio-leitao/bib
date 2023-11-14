@@ -84,7 +84,8 @@ fn insert_metadata(key: String, data: MetaData) -> Result<()> {
     base::save(&metadata, "metadata.bin")
 }
 
-fn add_paper_to_stack(paper: Paper) -> Result<()> {
+fn add_paper_to_stack(mut paper: Paper) -> Result<()> {
+    paper.update_last_accessed();
     let key = paper.entry.key.clone();
     //insert into main bibliography
     insert_entry_to_bibliography(paper.entry.clone())?;
@@ -123,6 +124,7 @@ fn add_from_url(url: &str) -> Result<()> {
         let meta = MetaData {
             pdf: Some(url.to_string()),
             notes: None,
+            last_accessed: Some(u64::MAX),
         };
         let paper = parse_entry(entry, Some(meta))
             .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))?;
@@ -141,6 +143,7 @@ fn add_from_path(path: &str) -> Result<()> {
             Ok(filename) => Some(MetaData {
                 pdf: Some(filename),
                 notes: None,
+                last_accessed: Some(u64::MAX),
             }),
             Err(err) => {
                 println!("Didn't manage to copy pdf.\n{}", err);
@@ -159,7 +162,7 @@ fn add_bibtex() -> Result<()> {
     let content = prompt_message()?;
     let bib = read_bibtex(&content)?;
     for entry in bib.into_iter() {
-        let paper = parse_entry(entry, None)
+        let mut paper = parse_entry(entry, None)
             .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))?;
         add_paper_to_stack(paper)?;
     }
