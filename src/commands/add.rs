@@ -75,7 +75,7 @@ fn insert_entry_to_bibliography(entry: Entry) -> Result<()> {
     let mut bibliography: Bibliography;
     bibliography = bibfile::read_bibliography()?;
     bibliography.insert(entry);
-    bibfile::save_bibliography(bibliography, false)
+    bibfile::save_bibliography(bibliography)
 }
 
 fn insert_metadata(key: String, data: MetaData) -> Result<()> {

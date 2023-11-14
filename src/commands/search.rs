@@ -1,5 +1,6 @@
 use crate::base::Paper;
 use crate::commands::add::add_online_paper;
+use crate::commands::cleanup::delete_paper;
 use crate::semantic::query;
 use crate::settings::{self, PDF_VIEWER, QUERY_LIMIT};
 use crate::utils::{bibfile, ui};
@@ -48,11 +49,6 @@ fn open_pdf(mut paper: Paper) -> Result<()> {
     Ok(())
 }
 
-fn delete_paper(paper: Paper) {
-    println!("Deleting paper from MAIN: {}", paper.title);
-    //search for pdf
-}
-
 fn search_online(query: String) -> Result<()> {
     let bibliography = bibfile::read_bibliography().expect("Unable to read bibliography");
     let action = String::from("[ONLINE]");
@@ -79,7 +75,7 @@ fn search_stack(query: String) -> Result<()> {
         Some(action) => match action {
             ui::Action::Open(paper) => Ok(show_notes(paper)),
             ui::Action::Submit(paper) => open_pdf(paper),
-            ui::Action::Remove(paper) => Ok(delete_paper(paper)),
+            ui::Action::Remove(paper) => delete_paper(paper),
         },
         None => Ok(()),
     }

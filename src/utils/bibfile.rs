@@ -79,14 +79,9 @@ pub fn read_bibtex(bib_content: &str) -> Result<Bibliography> {
         .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))
 }
 
-pub fn save_bibliography(bibliography: Bibliography, local: bool) -> Result<()> {
-    let bib_path: PathBuf;
-    if local {
-        bib_path = Path::new("bibliography.bib").to_path_buf();
-    } else {
-        let base_dir = settings::base_dir()?;
-        bib_path = Path::new(&base_dir).join("bibliography.bib");
-    }
+pub fn save_bibliography(bibliography: Bibliography) -> Result<()> {
+    let base_dir = settings::base_dir()?;
+    let bib_path = Path::new(&base_dir).join("bibliography.bib");
     let mut file = fs::File::create(bib_path)?;
     file.write_all(bibliography.to_biblatex_string().as_bytes())?;
     Ok(())
