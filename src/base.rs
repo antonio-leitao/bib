@@ -2,12 +2,12 @@ use crate::settings;
 use crate::utils::ui;
 use anyhow::{anyhow, Result};
 use biblatex::Entry;
+use open;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::process::{exit, Command};
 use std::time::{SystemTime, UNIX_EPOCH};
 use termion::color;
 
@@ -33,13 +33,9 @@ impl Pdf {
                 args
             }
         };
-        let result = Command::new("open").arg(&args).spawn();
-        match result {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                eprintln!("Unable to open PDF:{}", err);
-                exit(1)
-            }
+        match open::that(&args) {
+            Ok(()) => Ok(()),
+            Err(err) => Err(anyhow!("Could not open pdf {}", err)),
         }
     }
 }

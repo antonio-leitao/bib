@@ -2,6 +2,7 @@ use crate::base::{self, MetaData, Paper, Pdf};
 use crate::semantic::query::query_arxiv_paper;
 use crate::settings;
 use crate::utils::bibfile::{self, parse_entry, read_bibtex};
+use crate::utils::ui::Spinner;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry};
 use reqwest;
@@ -15,20 +16,16 @@ fn prompt_message() -> Result<String> {
     // Create a temporary file
     let temp_file = NamedTempFile::new()?;
     let temp_file_path = temp_file.path().to_owned();
-
     // Open Vim for user input (you might need to adjust the vim command)
     Command::new(settings::EDITOR)
         .arg(temp_file.path())
         .status()?;
-
     // Read the content of the file
     let mut message = String::new();
     let mut file = fs::File::open(&temp_file_path)?;
     file.read_to_string(&mut message)?;
-
     // Delete the temporary file
     temp_file.close()?;
-
     // Return the message
     Ok(message)
 }
@@ -78,7 +75,7 @@ fn insert_entry_to_bibliography(entry: Entry) -> Result<()> {
     bibfile::save_bibliography(bibliography)
 }
 
-fn insert_metadata(key: String, data: MetaData) -> Result<()> {
+pub fn insert_metadata(key: String, data: MetaData) -> Result<()> {
     let mut metadata = base::read_metadata()?;
     metadata.insert(key, data);
     base::save(&metadata, "metadata.bin")
@@ -97,6 +94,7 @@ fn add_paper_to_stack(mut paper: Paper) -> Result<()> {
 }
 
 fn attempt_pdf_download(paper: &mut Paper) {
+    let spinner = Spinner::new("Attempting to download pdf".to_string());
     //if there is pdf download it
     if let Some(data) = paper.meta.as_mut() {
         if let Some(pdf) = &data.pdf {
@@ -111,6 +109,7 @@ fn attempt_pdf_download(paper: &mut Paper) {
             }
         }
     }
+    spinner.stop();
 }
 
 fn add_from_arxiv(arxiv: &str) -> Result<()> {

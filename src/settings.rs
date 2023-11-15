@@ -7,7 +7,7 @@ use std::path::Path;
 use toml;
 
 pub const QUERY_LIMIT: usize = 100;
-pub const EDITOR: &str = "vim";
+pub const EDITOR: &str = "nvim";
 
 fn directory_exists(directory_path: &str) -> bool {
     let path = Path::new(directory_path);

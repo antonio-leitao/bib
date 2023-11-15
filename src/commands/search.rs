@@ -1,27 +1,60 @@
 use crate::base::Paper;
-use crate::commands::add::add_online_paper;
+use crate::commands::add::{add_online_paper, insert_metadata};
 use crate::commands::cleanup::delete_paper;
 use crate::semantic::query;
-use crate::settings::{self, QUERY_LIMIT};
+use crate::settings::{self, EDITOR, QUERY_LIMIT};
 use crate::utils::{bibfile, ui};
 use anyhow::anyhow;
 use anyhow::Result;
 use biblatex::Bibliography;
+use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 fn remove_already_present(bibfile: Bibliography, papers: &mut Vec<Paper>) {
     papers.retain(|paper| bibfile.get(&paper.entry.key).is_none());
 }
-fn show_notes(mut paper: Paper) {
+
+fn open_notes(mut paper: Paper) -> Result<()> {
     paper.update_last_accessed();
-    println!("Opening notes on paper: {}", paper.title);
+    if let Some(mut meta) = paper.meta {
+        let directory = settings::notes_dir()?;
+        let filename = format!("{}.txt", paper.id);
+        let file_path = Path::new(&directory).join(&filename);
+        match meta.notes {
+            None => {
+                //create and update metadata
+                fs::create_dir_all(&directory)?;
+                Command::new(EDITOR).arg(file_path).status()?;
+                meta.notes = Some(filename);
+                insert_metadata(paper.id, meta)?;
+            }
+            Some(_) => {
+                Command::new(EDITOR).arg(file_path).status()?;
+                insert_metadata(paper.id, meta)?;
+            }
+        }
+    };
+    Ok(())
 }
-fn open_pdf(mut paper: Paper) -> Result<()> {
+
+fn open_local_pdf(mut paper: Paper) -> Result<()> {
     paper.update_last_accessed();
+    if let Some(meta) = paper.meta {
+        let pdf = meta.pdf.clone();
+        insert_metadata(paper.id, meta)?;
+        if let Some(url) = pdf {
+            url.open()?
+        }
+    };
+    Ok(())
+}
+fn open_online_pdf(paper: Paper) -> Result<()> {
     if let Some(meta) = paper.meta {
         if let Some(pdf) = meta.pdf {
             pdf.open()?
         }
-    }
+    };
     Ok(())
 }
 
@@ -35,7 +68,7 @@ fn search_online(query: String) -> Result<()> {
     match ui::display_list(action, color, items, query, true, true, false, false) {
         Some(action) => match action {
             ui::Action::Add(paper) => add_online_paper(paper),
-            ui::Action::Open(paper) => open_pdf(paper),
+            ui::Action::Open(paper) => open_online_pdf(paper),
             _ => Err(anyhow!("Action not allowed in online search")),
         },
         None => Ok(()),
@@ -50,8 +83,8 @@ fn search_stack(query: String) -> Result<()> {
     let color = String::from("Yellow");
     match ui::display_list(action, color, items, query, false, false, true, true) {
         Some(action) => match action {
-            ui::Action::Open(paper) => open_pdf(paper),
-            ui::Action::Notes(paper) => Ok(show_notes(paper)),
+            ui::Action::Open(paper) => open_local_pdf(paper),
+            ui::Action::Notes(paper) => open_notes(paper),
             ui::Action::Remove(paper) => delete_paper(paper),
             _ => Err(anyhow!("Action not allowed in local search")),
         },
@@ -93,8 +126,8 @@ fn immutable_search() -> Result<()> {
         false,
     ) {
         Some(action) => match action {
-            ui::Action::Notes(paper) => Ok(show_notes(paper)),
-            ui::Action::Open(paper) => open_pdf(paper),
+            ui::Action::Notes(paper) => open_notes(paper),
+            ui::Action::Open(paper) => open_local_pdf(paper),
             _ => Err(anyhow!("Action not allowed in online search")),
         },
         None => Ok(()),
