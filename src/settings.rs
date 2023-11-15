@@ -8,7 +8,6 @@ use toml;
 
 pub const QUERY_LIMIT: usize = 100;
 pub const EDITOR: &str = "vim";
-pub const PDF_VIEWER: &str = "zathura";
 
 fn directory_exists(directory_path: &str) -> bool {
     let path = Path::new(directory_path);

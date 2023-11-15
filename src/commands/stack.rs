@@ -3,17 +3,17 @@ use anyhow::{anyhow, Result};
 use shellexpand::tilde;
 use std::fs;
 
-fn merge() {
-    //yeets and then deletes
-}
-fn yeet(//just yeets
-) {
-}
-fn yank(//will require multiselect in terms
-) {
-}
-
-fn fork() {}
+// fn merge() {
+//     //yeets and then deletes
+// }
+// fn yeet(//just yeets
+// ) {
+// }
+// fn yank(//will require multiselect in terms
+// ) {
+// }
+//
+// fn fork() {}
 
 fn delete_stack(stack: String) -> Result<()> {
     if !stack_exists(&stack)? {

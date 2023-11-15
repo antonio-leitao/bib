@@ -1,4 +1,4 @@
-use crate::base::{self, MetaData, Paper};
+use crate::base::{self, MetaData, Paper, Pdf};
 use crate::semantic::query::query_arxiv_paper;
 use crate::settings;
 use crate::utils::bibfile::{self, parse_entry, read_bibtex};
@@ -99,13 +99,15 @@ fn add_paper_to_stack(mut paper: Paper) -> Result<()> {
 fn attempt_pdf_download(paper: &mut Paper) {
     //if there is pdf download it
     if let Some(data) = paper.meta.as_mut() {
-        if let Some(url) = &data.pdf {
-            match download_pdf_from_url(&url, &paper.id) {
-                Ok(filename) => data.pdf = Some(filename),
-                Err(err) => {
-                    println!("Didn't manage to download pdf.\n{}", err);
-                    data.pdf = None
-                }
+        if let Some(pdf) = &data.pdf {
+            match pdf {
+                Pdf::Path(_) => (),
+                Pdf::Url(url) => match download_pdf_from_url(&url, &paper.id) {
+                    Ok(filename) => data.pdf = Some(Pdf::Path(filename)),
+                    Err(err) => {
+                        println!("Didn't manage to download pdf.\n{}", err);
+                    }
+                },
             }
         }
     }
@@ -122,7 +124,7 @@ fn add_from_url(url: &str) -> Result<()> {
     //get only the first entry
     if let Some(entry) = bib.into_iter().next() {
         let meta = MetaData {
-            pdf: Some(url.to_string()),
+            pdf: Some(Pdf::Url(url.to_string())),
             notes: None,
             last_accessed: Some(u64::MAX),
         };
@@ -141,7 +143,7 @@ fn add_from_path(path: &str) -> Result<()> {
     if let Some(entry) = bib.into_iter().next() {
         let meta = match copy_pdf_from_path(path, &entry.key) {
             Ok(filename) => Some(MetaData {
-                pdf: Some(filename),
+                pdf: Some(Pdf::Path(filename.to_string())),
                 notes: None,
                 last_accessed: Some(u64::MAX),
             }),
@@ -162,7 +164,7 @@ fn add_bibtex() -> Result<()> {
     let content = prompt_message()?;
     let bib = read_bibtex(&content)?;
     for entry in bib.into_iter() {
-        let mut paper = parse_entry(entry, None)
+        let paper = parse_entry(entry, None)
             .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))?;
         add_paper_to_stack(paper)?;
     }

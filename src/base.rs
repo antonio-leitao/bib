@@ -1,22 +1,54 @@
 use crate::settings;
 use crate::utils::ui;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use biblatex::Entry;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::process::{exit, Command};
 use std::time::{SystemTime, UNIX_EPOCH};
 use termion::color;
-// Define paper and Note
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Pdf {
+    Url(String),
+    Path(String),
+}
+impl Pdf {
+    pub fn open(&self) -> Result<()> {
+        let args = match self {
+            Pdf::Url(url) => url.clone(),
+            Pdf::Path(filename) => {
+                let directory = settings::pdf_dir()?;
+                let file_path = Path::new(&directory).join(&filename);
+                if !file_path.exists() {
+                    return Err(anyhow!(
+                        "No PDF {} found on current stack\nAdd it manually with `bib add`",
+                        &filename
+                    ));
+                };
+                let args = directory.to_string() + &filename;
+                args
+            }
+        };
+        let result = Command::new("open").arg(&args).spawn();
+        match result {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                eprintln!("Unable to open PDF:{}", err);
+                exit(1)
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MetaData {
-    pub pdf: Option<String>,
+    pub pdf: Option<Pdf>,
     pub notes: Option<String>,
     pub last_accessed: Option<u64>,
-    //last accessed
 }
 
 #[derive(Clone)]

@@ -5,7 +5,7 @@ use biblatex::{Bibliography, Entry, Person, RetrievalError};
 use regex::Regex;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn parse_year(entry: &Entry) -> Result<i64, RetrievalError> {
     entry.get_as::<i64>("year")

@@ -1,4 +1,4 @@
-use crate::base::{MetaData, Paper};
+use crate::base::{MetaData, Paper, Pdf};
 use crate::utils::bibfile::{parse_entry, read_bibtex};
 use crate::utils::ui;
 use anyhow::{anyhow, Result};
@@ -66,7 +66,7 @@ fn read_metadata(paper: &Payload) -> MetaData {
         None => None,
     };
     MetaData {
-        pdf: url.cloned(),
+        pdf: url.map(|url| Pdf::Url(url.to_string())),
         notes: None,
         last_accessed: None,
     }

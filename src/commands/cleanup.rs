@@ -1,4 +1,4 @@
-use crate::base::{self, MetaData, Paper};
+use crate::base::{self, MetaData, Paper, Pdf};
 use crate::settings;
 use crate::utils::bibfile;
 use anyhow::Result;
@@ -43,12 +43,13 @@ fn remove_notes(notes: Option<String>) -> Result<()> {
         None => Ok(()),
     }
 }
-fn remove_pdf(pdf: Option<String>) -> Result<()> {
+fn remove_pdf(pdf: Option<Pdf>) -> Result<()> {
     match pdf {
-        Some(name) => {
+        Some(Pdf::Path(filename)) => {
             let pdf_dir = settings::pdf_dir()?;
-            remove_file(&pdf_dir, &name)
+            remove_file(&pdf_dir, &filename)
         }
+        Some(Pdf::Url(_)) => Ok(()),
         None => Ok(()),
     }
 }
