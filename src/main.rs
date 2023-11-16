@@ -67,7 +67,7 @@ enum Commands {
     Yeet {
         /// Add new reference along with it. Defaults to base.
         #[clap(value_name = "STACK")]
-        stack: Option<String>,
+        stack: String,
     },
     /// Bring references from target stack
     Yank {
@@ -129,16 +129,22 @@ fn main() {
             Ok(()) => println!("Succesfully added reference"),
             Err(err) => println!("BIB error: {}", err),
         },
-        Commands::Merge { stack } => println!("Merging {} stack", stack),
-        Commands::Yeet { stack } => match stack {
-            Some(stack) => println!("Yeeting into {} stack", stack),
-            None => println!("Yeeting into base base"),
+        Commands::Merge { stack } => match commands::stack::merge(stack.clone()) {
+            Ok(()) => println!("Merging {} stack", stack),
+            Err(err) => println!("BIB error: {}", err),
+        },
+        Commands::Yeet { stack } => match commands::stack::yeet(stack.clone()) {
+            Ok(()) => println!("Yeeting into {} stack", stack),
+            Err(err) => println!("BIB error: {}", err),
         },
         Commands::Yank { stack } => match stack {
             Some(stack) => println!("Yanking from {} stack", stack),
             None => println!("Yanking from base stack"),
         },
-        Commands::Fork { stack } => println!("Forking current stack under new name {}", stack),
+        Commands::Fork { stack } => match commands::stack::fork(stack.clone()) {
+            Ok(oldname) => println!("Forking {} stack into as {}", oldname, stack),
+            Err(err) => println!("BIB error: {}", err),
+        },
         Commands::Search { query, online } => commands::search::search(query, online),
         Commands::Peek => commands::search::peek(),
         Commands::Export { notes, pdfs } => {

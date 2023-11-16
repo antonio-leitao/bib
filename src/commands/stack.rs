@@ -2,18 +2,42 @@ use crate::settings;
 use anyhow::{anyhow, Result};
 use shellexpand::tilde;
 use std::fs;
+use std::path::Path;
 
-// fn merge() {
-//     //yeets and then deletes
-// }
-// fn yeet(//just yeets
-// ) {
-// }
-// fn yank(//will require multiselect in terms
-// ) {
-// }
-//
-// fn fork() {}
+fn merge_stacks(from: &str, into: &str) {
+    merge_notes(from, into);
+    merge_pdfs(from, into);
+    merge_metadata(from, into);
+    merge_bibfiles(from, into);
+}
+fn merge_pdfs(from: &str, into: &str) {}
+fn merge_notes(from: &str, into: &str) {
+    //for each note in from
+    //if exists in towards{
+    //open inot, append and save
+    //} else {
+    //move from merge
+    //}
+}
+fn merge_metadata(from: &str, into: &str) {}
+fn merge_bibfiles(from: &str, into: &str) {}
+
+// Function to recursively copy the contents of a directory
+fn copy_dir(src: &str, dest: &str) -> Result<()> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let entry_path = entry.path();
+        let dest_path = Path::new(dest).join(entry.file_name());
+
+        if entry_path.is_dir() {
+            fs::create_dir_all(&dest_path)?;
+            copy_dir(&entry_path.to_string_lossy(), &dest_path.to_string_lossy())?;
+        } else {
+            fs::copy(&entry_path, &dest_path)?;
+        }
+    }
+    Ok(())
+}
 
 fn delete_stack(stack: String) -> Result<()> {
     if !stack_exists(&stack)? {
@@ -97,6 +121,35 @@ pub fn init() -> Result<()> {
     settings::save_config_file(&config)?;
     //create base stack
     new_stack(String::from("base"), true)
+}
+
+pub fn fork(new_name: String) -> Result<String> {
+    if stack_exists(&new_name)? {
+        return Err(anyhow!("Stack named {} already exists", new_name));
+    }
+    let from = settings::current_stack()?;
+    let old_path = tilde(&format!("~/.bib/{}", from)).to_string();
+    let new_path = tilde(&format!("~/.bib/{}", new_name)).to_string();
+    // Create the new stack directory
+    fs::create_dir(&new_path)?;
+    // Copy the contents of the old stack to the new stack
+    copy_dir(&old_path, &new_path)?;
+    //change config
+    let config = settings::Config { stack: new_name };
+    settings::save_config_file(&config)?;
+    Ok(from)
+}
+
+pub fn merge(from: String) -> Result<()> {
+    let into = settings::current_stack()?;
+    merge_stacks(&from, &into);
+    delete_stack(from)
+}
+
+pub fn yeet(into: String) -> Result<()> {
+    let from = settings::current_stack()?;
+    merge_stacks(&from, &into);
+    Ok(())
 }
 
 pub fn stack(stack: String, delete: bool, rename: bool) {
