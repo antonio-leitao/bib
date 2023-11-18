@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use biblatex::Entry;
 use open;
 use serde::{Deserialize, Serialize};
+use shellexpand::tilde;
 use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
@@ -83,10 +84,8 @@ impl Paper {
 pub fn save<T: Serialize>(data: &HashMap<String, T>, filename: &str) -> Result<()> {
     let base_dir = settings::base_dir()?;
     let data_dir_path = Path::new(&base_dir);
-
     let data_file_path = data_dir_path.join(filename);
     let mut file = fs::File::create(data_file_path)?;
-
     // Serialize the HashMap<String, Note> to bytes and write it to the file
     let data_bytes = bincode::serialize(data)?;
     file.write_all(&data_bytes)?;
@@ -97,6 +96,23 @@ pub fn save<T: Serialize>(data: &HashMap<String, T>, filename: &str) -> Result<(
 pub fn read_metadata() -> Result<HashMap<String, MetaData>> {
     let base_dir = settings::base_dir()?;
     let data_dir_path = Path::new(&base_dir);
+    let data_file_path = data_dir_path.join("metadata.bin");
+
+    if data_file_path.exists() {
+        let mut data_bytes = Vec::new();
+        fs::File::open(data_file_path)?.read_to_end(&mut data_bytes)?;
+        // Deserialize the bytes into a HashMap<String, Note>
+        let data = bincode::deserialize(&data_bytes)?;
+        Ok(data)
+    } else {
+        // Return an empty HashMap if the file does not exist
+        Ok(HashMap::new())
+    }
+}
+
+pub fn read_other_metadata(from: &str) -> Result<HashMap<String, MetaData>> {
+    let dir = tilde(&format!("~/.bib/{}", from)).to_string();
+    let data_dir_path = Path::new(&dir);
     let data_file_path = data_dir_path.join("metadata.bin");
 
     if data_file_path.exists() {

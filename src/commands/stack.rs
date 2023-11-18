@@ -1,26 +1,128 @@
+use crate::base::{self, MetaData};
 use crate::settings;
+use crate::utils::bibfile;
 use anyhow::{anyhow, Result};
 use shellexpand::tilde;
-use std::fs;
+use std::collections::HashMap;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::Path;
 
-fn merge_stacks(from: &str, into: &str) {
-    merge_notes(from, into);
-    merge_pdfs(from, into);
-    merge_metadata(from, into);
-    merge_bibfiles(from, into);
+fn merge_stacks(from: String, into: String) -> Result<()> {
+    if !stack_exists(&from)? {
+        return Err(anyhow!("Stack named {} does not exist", from));
+    };
+    if from == into {
+        return Err(anyhow!("Stacks must be different"));
+    }
+    merge_bibfiles(&from, &into)?;
+    merge_pdfs(&from, &into)?;
+    merge_notes(&from, &into)?;
+    merge_metadata(&from, &into)
 }
-fn merge_pdfs(from: &str, into: &str) {}
-fn merge_notes(from: &str, into: &str) {
-    //for each note in from
-    //if exists in towards{
-    //open inot, append and save
-    //} else {
-    //move from merge
-    //}
+
+fn append_notes(file_from: &str, file_into: &str) -> Result<()> {
+    // Open the source file for reading
+    let mut file_from = File::open(file_from)?;
+    // Open the destination file for appending
+    let mut file_into = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(file_into)?;
+    // If the destination file is not empty, append a newline before adding content
+    if file_into.metadata()?.len() > 0 {
+        writeln!(file_into)?;
+    }
+    // Read the contents of the source file
+    let mut content = Vec::new();
+    file_from.read_to_end(&mut content)?;
+    // Append the contents to the destination file
+    file_into.write_all(&content)?;
+    Ok(())
 }
-fn merge_metadata(from: &str, into: &str) {}
-fn merge_bibfiles(from: &str, into: &str) {}
+
+fn merge_notes(from: &str, into: &str) -> Result<()> {
+    let source = tilde(&format!("~/.bib/{}/notes/", from)).to_string();
+    let target = tilde(&format!("~/.bib/{}/notes/", into)).to_string();
+    // Iterate through each file in the source directory
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let file_path = entry.path();
+
+        // Check if the file exists in the target directory
+        let target_file_path = Path::new(&target).join(file_path.file_name().unwrap());
+        if target_file_path.exists() {
+            // File exists in the target directory, append contents
+            append_notes(
+                &file_path.to_string_lossy(),
+                &target_file_path.to_string_lossy(),
+            )?;
+        } else {
+            // File doesn't exist in the target directory, copy it
+            fs::copy(&file_path, &target_file_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn merge_pdfs(from: &str, into: &str) -> Result<()> {
+    let source = tilde(&format!("~/.bib/{}/pdf/", from)).to_string();
+    let target = tilde(&format!("~/.bib/{}/pdf/", into)).to_string();
+    copy_dir(&source, &target)
+}
+
+fn merge_metadata(from: &str, into: &str) -> Result<()> {
+    //read both metadatas,
+    let from_metadata = base::read_other_metadata(from)?;
+    let into_metadata = base::read_other_metadata(into)?;
+    let merged_into = merge_metadata_maps(from_metadata, into_metadata);
+    base::save(&merged_into, "metadata.bin")
+}
+
+fn merge_metadata_maps(
+    from: HashMap<String, MetaData>,
+    mut into: HashMap<String, MetaData>,
+) -> HashMap<String, MetaData> {
+    for (key, from_metadata) in from {
+        match into.contains_key(&key) {
+            false => {
+                into.insert(key, from_metadata);
+                ()
+            }
+            true => {
+                let into_metadata = into.get_mut(&key).unwrap();
+                // Merge pdf and notes, prioritizing non-None values
+                if let Some(from_pdf) = from_metadata.pdf {
+                    into_metadata.pdf = Some(from_pdf);
+                };
+                if let Some(from_notes) = from_metadata.notes {
+                    into_metadata.notes = Some(from_notes);
+                }
+                // Merge last_accessed, prioritizing the most recent value (largest u64)
+                if let Some(from_last_accessed) = from_metadata.last_accessed {
+                    if let Some(into_last_accessed) = into_metadata.last_accessed {
+                        into_metadata.last_accessed =
+                            Some(from_last_accessed.max(into_last_accessed));
+                    } else {
+                        into_metadata.last_accessed = Some(from_last_accessed);
+                    }
+                }
+            }
+        };
+    }
+    into
+}
+
+fn merge_bibfiles(from: &str, into: &str) -> Result<()> {
+    //read both metadatas,
+    let mut from_bib = bibfile::read_other_bibliography(from)?;
+    let into_bib = bibfile::read_other_bibliography(into)?;
+    //into gets put in from because insert overwrites
+    for entry in into_bib.into_iter() {
+        from_bib.insert(entry);
+    }
+    bibfile::save_other_bibliography(from_bib, from)
+}
 
 // Function to recursively copy the contents of a directory
 fn copy_dir(src: &str, dest: &str) -> Result<()> {
@@ -142,14 +244,13 @@ pub fn fork(new_name: String) -> Result<String> {
 
 pub fn merge(from: String) -> Result<()> {
     let into = settings::current_stack()?;
-    merge_stacks(&from, &into);
+    merge_stacks(from.clone(), into)?;
     delete_stack(from)
 }
 
 pub fn yeet(into: String) -> Result<()> {
     let from = settings::current_stack()?;
-    merge_stacks(&from, &into);
-    Ok(())
+    merge_stacks(from, into)
 }
 
 pub fn stack(stack: String, delete: bool, rename: bool) {

@@ -3,6 +3,7 @@ use crate::settings;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person, RetrievalError};
 use regex::Regex;
+use shellexpand::tilde;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -79,6 +80,13 @@ pub fn read_bibtex(bib_content: &str) -> Result<Bibliography> {
         .map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))
 }
 
+pub fn save_other_bibliography(bibliography: Bibliography, from: &str) -> Result<()> {
+    let dir = tilde(&format!("~/.bib/{}", from)).to_string();
+    let bib_path = Path::new(&dir).join("bibliography.bib");
+    let mut file = fs::File::create(bib_path)?;
+    file.write_all(bibliography.to_biblatex_string().as_bytes())?;
+    Ok(())
+}
 pub fn save_bibliography(bibliography: Bibliography) -> Result<()> {
     let base_dir = settings::base_dir()?;
     let bib_path = Path::new(&base_dir).join("bibliography.bib");
@@ -90,6 +98,22 @@ pub fn save_bibliography(bibliography: Bibliography) -> Result<()> {
 pub fn read_bibliography() -> Result<Bibliography> {
     let base_dir = settings::base_dir()?;
     let bib_path = Path::new(&base_dir).join("bibliography.bib");
+    let mut bib_content = String::new();
+    if !bib_path.exists() {
+        // If the draft file doesn't exist, create an empty one
+        let mut file = fs::File::create(&bib_path)?;
+        file.write_all(b"")?;
+    } else {
+        // If the draft file exists, open and read its content
+        let mut file = fs::File::open(&bib_path)?;
+        file.read_to_string(&mut bib_content)?;
+    }
+    read_bibtex(&bib_content)
+}
+
+pub fn read_other_bibliography(from: &str) -> Result<Bibliography> {
+    let dir = tilde(&format!("~/.bib/{}", from)).to_string();
+    let bib_path = Path::new(&dir).join("bibliography.bib");
     let mut bib_content = String::new();
     if !bib_path.exists() {
         // If the draft file doesn't exist, create an empty one
