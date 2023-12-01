@@ -21,17 +21,15 @@ impl Pdf {
     pub fn open(&self) -> Result<()> {
         let args = match self {
             Pdf::Url(url) => url.clone(),
-            Pdf::Path(filename) => {
-                let directory = settings::pdf_dir()?;
-                let file_path = Path::new(&directory).join(&filename);
+            Pdf::Path(filepath) => {
+                let file_path = Path::new(&filepath);
                 if !file_path.exists() {
                     return Err(anyhow!(
                         "No PDF {} found on current stack\nAdd it manually with `bib add`",
-                        &filename
+                        &filepath
                     ));
                 };
-                let args = directory.to_string() + &filename;
-                args
+                filepath.clone()
             }
         };
         match open::that(&args) {

@@ -94,18 +94,22 @@ fn add_paper_to_stack(mut paper: Paper) -> Result<()> {
 }
 
 fn attempt_pdf_download(paper: &mut Paper) {
-    let spinner = Spinner::new("Attempting to download pdf".to_string());
+    let spinner = Spinner::new("Attempting to find pdf".to_string());
     //if there is pdf download it
     if let Some(data) = paper.meta.as_mut() {
         if let Some(pdf) = &data.pdf {
             match pdf {
                 Pdf::Path(_) => (),
-                Pdf::Url(url) => match download_pdf_from_url(&url, &paper.id) {
-                    Ok(filename) => data.pdf = Some(Pdf::Path(filename)),
-                    Err(err) => {
-                        println!("Didn't manage to download pdf.\n{}", err);
+                Pdf::Url(url) => {
+                    if url.ends_with(".pdf") {
+                        match download_pdf_from_url(&url, &paper.id) {
+                            Ok(filename) => data.pdf = Some(Pdf::Path(filename)),
+                            Err(err) => {
+                                println!("Didn't manage to download pdf.\n{}", err);
+                            }
+                        }
                     }
-                },
+                }
             }
         }
     }
