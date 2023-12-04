@@ -23,7 +23,7 @@ brew tap antonio-leitao/taps
 brew install bib
 ```
 # Setting Up Semantic Scholar
-> **Note**
+> [!NOTE]
 > to allow integration with Semantic Scholar you need to have an API key and set it as environment variable.
 
 ```bash
@@ -101,7 +101,7 @@ Duplicates current stack under new name, switches to new stack.
 ```
 bib add --arxiv <arxiv url>
 ```
-> **Warning**
+> [!WARNING]
 > Requires Semantic Scholar to be set up.
 
 Retrieves PDF and bibtext from arxiv url.
@@ -130,7 +130,7 @@ From here you can add/edit notes attached to each reference.
 ```
 bib search --online <QUERY>
 ```
-> **Warning**
+> [!WARNING]
 > Requires Semantic Scholar to be set up.
 
 Interactive search over all references online matching query. Allows for adding references to stack.
