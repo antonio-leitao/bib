@@ -106,6 +106,11 @@ enum Commands {
     Peek,
     /// Clean up all notes and references, find pdfs etc
     Cleanup,
+    Debug {
+        /// Url to pdf
+        #[clap(short, long, group = "from")]
+        url: String,
+    },
     /// Initialize Bib
     Init,
 }
@@ -151,5 +156,9 @@ fn main() {
             println!("Exporting notes:{}, Exporting Pdfs:{}", notes, pdfs)
         }
         Commands::Cleanup => println!("Cleanup on aisle 3"),
+        Commands::Debug { url } => match commands::debug::run(&url) {
+            Ok(()) => (),
+            Err(err) => println!("BIB error: {}", err),
+        },
     }
 }
