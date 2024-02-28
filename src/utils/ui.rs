@@ -15,8 +15,6 @@ const MUTED: termion::color::Rgb = color::Rgb(46, 60, 68);
 
 pub enum Action<T: Item> {
     Open(T),
-    Add(T),
-    Notes(T),
     Remove(T),
 }
 
@@ -173,14 +171,8 @@ fn unwrap_color(color_name: &str) -> Box<dyn color::Color> {
     };
     color_enum
 }
-fn load_options(allow_add: bool, allow_notes: bool, allow_delete: bool) -> Vec<(String, String)> {
+fn load_options(allow_delete: bool) -> Vec<(String, String)> {
     let mut help_options = vec![("enter".to_string(), "open".to_string())];
-    if allow_add {
-        help_options.push(("a".to_string(), "add".to_string()))
-    }
-    if allow_notes {
-        help_options.push(("n".to_string(), "notes".to_string()))
-    }
     if allow_delete {
         help_options.push(("d".to_string(), "delete".to_string()))
     }
@@ -208,8 +200,6 @@ where
     action: String,
     color: String,
     help_options: Vec<(String, String)>,
-    allow_add: bool,
-    allow_notes: bool,
     allow_delete: bool,
 }
 impl<T> Model<T>
@@ -222,13 +212,11 @@ where
         library: Vec<T>,
         stdout: RawTerminal<Stdout>,
         query: String,
-        allow_add: bool,
-        allow_notes: bool,
         allow_delete: bool,
     ) -> Self {
         let items = apply_filter(&query, &library);
         let pager = Pager::new(&items, 30);
-        let help_options = load_options(allow_add, allow_notes, allow_delete);
+        let help_options = load_options(allow_delete);
         let (width, _) = termion::terminal_size().unwrap();
         Model {
             state: State::Browsing,
@@ -243,8 +231,6 @@ where
             action,
             color,
             help_options,
-            allow_add,
-            allow_notes,
             allow_delete,
         }
     }
@@ -400,16 +386,6 @@ where
             Key::Char('\n') => {
                 self.open();
             }
-            Key::Char('a') => {
-                if self.allow_add {
-                    self.add();
-                }
-            }
-            Key::Char('n') => {
-                if self.allow_notes {
-                    self.notes();
-                }
-            }
             Key::Char('d') => {
                 if self.allow_delete {
                     self.remove();
@@ -459,20 +435,6 @@ where
     fn open(&mut self) {
         self.selected = match self.select() {
             Some(paper) => Some(Action::Open(paper)),
-            None => None,
-        };
-        self.state = State::Quit;
-    }
-    fn add(&mut self) {
-        self.selected = match self.select() {
-            Some(paper) => Some(Action::Add(paper)),
-            None => None,
-        };
-        self.state = State::Quit;
-    }
-    fn notes(&mut self) {
-        self.selected = match self.select() {
-            Some(paper) => Some(Action::Notes(paper)),
             None => None,
         };
         self.state = State::Quit;
@@ -527,8 +489,6 @@ pub fn display_list<T: Item + Clone>(
     items: Vec<T>,
     initial_query: String,
     blank_slate: bool,
-    allow_add: bool,
-    allow_notes: bool,
     allow_delete: bool,
 ) -> Option<Action<T>> {
     //temporary solution
@@ -538,16 +498,7 @@ pub fn display_list<T: Item + Clone>(
     if !blank_slate {
         query_value.push_str(&initial_query);
     }
-    let mut model = Model::new(
-        action,
-        color,
-        items,
-        stdout,
-        query_value,
-        allow_add,
-        allow_notes,
-        allow_delete,
-    );
+    let mut model = Model::new(action, color, items, stdout, query_value, allow_delete);
     model.init();
     //every time a key is clicked
     for c in stdin.keys() {

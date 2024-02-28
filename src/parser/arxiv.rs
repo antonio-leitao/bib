@@ -159,38 +159,23 @@ fn generate_biblatex(entry: &Entry, arxiv_id: &str) -> String {
 
     biblatex
 }
-fn arxiv2bib(arxiv_id: &str) -> Result<String, reqwest::Error> {
+fn arxiv2bib(arxiv_id: &str) -> Result<String> {
     let url = format!(
         "http://export.arxiv.org/api/query?id_list={}&max_results=1",
         arxiv_id
     );
     let response = get(&url)?;
     let xml = response.text()?;
-    //let reference = Reference::from_xml(&xml);
-    //Ok(reference.to_bibtex())
-    Ok(xml)
+    let feed: Feed = quick_xml::de::from_str(&xml)?;
+    let bibtex = generate_biblatex(&feed.entry, arxiv_id);
+    Ok(bibtex)
 }
 
-pub fn run(link: &str) -> Result<()> {
+pub fn get_bib(link: &str) -> Result<String> {
     //Should return maube an option isntead?
     match get_arxiv_id(link) {
-        Some(arxiv_id) => {
-            // println!("{:?}", arxiv_id);
-            // Get PDF link
-            let pdf_link = get_arxiv_pdf_link(arxiv_id);
-            // println!("PDF Link: {}", pdf_link);
-            //get response
-            match arxiv2bib(arxiv_id) {
-                Ok(xml) => {
-                    let feed: Feed = quick_xml::de::from_str(&xml).unwrap();
-                    let bibtex = generate_biblatex(&feed.entry, arxiv_id);
-                    println!("{}", bibtex);
-                }
-                Err(_) => bail!("Error acessing api"),
-            }
-        }
+        Some(arxiv_id) => arxiv2bib(arxiv_id),
         //maybe change this to option
         None => bail!("Could not get id"),
     }
-    Ok(())
 }

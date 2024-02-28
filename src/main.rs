@@ -1,6 +1,6 @@
 mod base;
 mod commands;
-mod semantic;
+mod parser;
 mod settings;
 mod utils;
 use clap::{Parser, Subcommand};
@@ -83,24 +83,15 @@ enum Commands {
     },
     /// Manually add new reference
     Add {
-        /// Arxiv
-        #[clap(short, long, group = "from")]
-        arxiv: Option<String>,
         /// Url to pdf
-        #[clap(short, long, group = "from")]
+        #[clap(short, long)]
         url: Option<String>,
-        /// Path to Pdf in this computer
-        #[clap(short, long, group = "from")]
-        path: Option<String>,
     },
     /// Mutable search
     Search {
         /// Initial query for searching
         #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
         query: String,
-        /// Search online instead of locally
-        #[clap(short, long, default_value_t = false)]
-        online: bool,
     },
     /// Immutable search of most common
     Peek,
@@ -130,7 +121,7 @@ fn main() {
             Ok(()) => println!("Switched to {} stack", stack),
             Err(err) => println!("BIB error: {}", err),
         },
-        Commands::Add { arxiv, url, path } => match commands::add::add(arxiv, url, path) {
+        Commands::Add { url } => match commands::add::add(url) {
             Ok(()) => println!("Succesfully added reference"),
             Err(err) => println!("BIB error: {}", err),
         },
@@ -150,7 +141,7 @@ fn main() {
             Ok(oldname) => println!("Forking {} stack into as {}", oldname, stack),
             Err(err) => println!("BIB error: {}", err),
         },
-        Commands::Search { query, online } => commands::search::search(query, online),
+        Commands::Search { query } => commands::search::search(query),
         Commands::Peek => commands::search::peek(),
         Commands::Export { notes, pdfs } => {
             println!("Exporting notes:{}, Exporting Pdfs:{}", notes, pdfs)

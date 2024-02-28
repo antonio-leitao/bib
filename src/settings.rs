@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use shellexpand::tilde;
 use std::fs;
@@ -6,7 +6,6 @@ use std::io::{BufReader, Read, Write};
 use std::path::Path;
 use toml;
 
-pub const QUERY_LIMIT: usize = 100;
 pub const EDITOR: &str = "nvim";
 
 fn directory_exists(directory_path: &str) -> bool {
@@ -61,7 +60,7 @@ pub fn current_stack() -> Result<String> {
 pub fn list_stacks() -> Result<Vec<String>> {
     let dir = tilde("~/.bib").to_string();
     if !directory_exists(&dir) {
-        return Err(anyhow!("Bib not initiated, run Bib init",));
+        bail!("Bib not initiated, run Bib init");
     };
     let entries = fs::read_dir(dir)?;
     let mut directories = Vec::new();
@@ -84,34 +83,7 @@ pub fn base_dir() -> Result<String> {
     let path = format!("~/.bib/{}", stack);
     let dir = tilde(&path).to_string();
     if !directory_exists(&dir) {
-        return Err(anyhow!(
-            "Could not find stack. Run bib stack {} to create",
-            stack
-        ));
-    };
-    Ok(dir)
-}
-pub fn notes_dir() -> Result<String> {
-    let stack = current_stack()?;
-    let path = format!("~/.bib/{}/notes/", stack);
-    let dir = tilde(&path).to_string();
-    if !directory_exists(&dir) {
-        return Err(anyhow!(
-            "Could not find stack. Run bib stack {} to create",
-            stack
-        ));
-    };
-    Ok(dir)
-}
-pub fn pdf_dir() -> Result<String> {
-    let stack = current_stack()?;
-    let path = format!("~/.bib/{}/pdf/", stack);
-    let dir = tilde(&path).to_string();
-    if !directory_exists(&dir) {
-        return Err(anyhow!(
-            "Could not find stack. Run bib stack {} to create",
-            stack
-        ));
+        bail!("Could not find stack. Run bib stack {} to create", stack);
     };
     Ok(dir)
 }

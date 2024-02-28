@@ -1,4 +1,4 @@
-use crate::base::{self, MetaData, Paper};
+use crate::base::Paper;
 use crate::settings;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person, RetrievalError};
@@ -42,15 +42,19 @@ fn remove_non_alphabetic(input: &str) -> String {
     re.replace_all(input, "").to_string()
 }
 
-fn format_slug(authors: String, year: i64, title: String) -> String {
-    format!("{} {} {}", authors, year, title)
+fn parse_url(entry: &Entry) -> Option<String> {
+    match entry.get_as::<String>("url") {
+        Ok(val) => Some(val),
+        Err(_) => None,
+    }
 }
 
-pub fn parse_entry(entry: Entry, meta: Option<MetaData>) -> Result<Paper, RetrievalError> {
+pub fn parse_entry(entry: Entry) -> Result<Paper, RetrievalError> {
+    let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
     let (author, author_line) = parse_author(&entry)?;
     let year = parse_year(&entry)?;
-    let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
-    let slug = format_slug(author_line, year, remove_non_alphabetic(&title));
+    let url = parse_url(&entry);
+    let slug = format!("{} {} {}", author_line, year, remove_non_alphabetic(&title));
     Ok(Paper {
         id: entry.key.clone(),
         entry,
@@ -58,16 +62,14 @@ pub fn parse_entry(entry: Entry, meta: Option<MetaData>) -> Result<Paper, Retrie
         year,
         title,
         slug,
-        meta,
+        url,
     })
 }
 
 pub fn parse_bibliography(bibliography: Bibliography) -> Vec<Paper> {
     let mut papers: Vec<Paper> = Vec::new();
-    let all_metadata = base::read_metadata().expect("cannot read metadata");
     for entry in bibliography.into_iter() {
-        let metadata = all_metadata.get(&entry.key).cloned();
-        match parse_entry(entry, metadata) {
+        match parse_entry(entry) {
             Ok(paper) => papers.push(paper),
             Err(_) => continue,
         }

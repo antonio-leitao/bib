@@ -1,5 +1,4 @@
-use crate::base::{self, MetaData, Paper, Pdf};
-use crate::settings;
+use crate::base::Paper;
 use crate::utils::bibfile;
 use anyhow::Result;
 use biblatex::Bibliography;
@@ -14,12 +13,6 @@ fn remove_from_bibliography(key: &str) -> Result<()> {
     bibfile::save_bibliography(bibliography)
 }
 
-fn remove_from_metadata(key: &str) -> Result<Option<MetaData>> {
-    let mut all_metadata = base::read_metadata()?;
-    let metadata = all_metadata.remove(key);
-    base::save(&all_metadata, "metadata.bin")?;
-    Ok(metadata)
-}
 fn remove_file(directory_path: &str, file_name: &str) -> Result<()> {
     // Construct the full path to the file
     let file_path = Path::new(directory_path).join(file_name);
@@ -34,36 +27,7 @@ fn remove_file(directory_path: &str, file_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn remove_notes(notes: Option<String>) -> Result<()> {
-    match notes {
-        Some(name) => {
-            let notes_dir = settings::notes_dir()?;
-            remove_file(&notes_dir, &name)
-        }
-        None => Ok(()),
-    }
-}
-fn remove_pdf(pdf: Option<Pdf>) -> Result<()> {
-    match pdf {
-        Some(Pdf::Path(filename)) => {
-            let pdf_dir = settings::pdf_dir()?;
-            remove_file(&pdf_dir, &filename)
-        }
-        Some(Pdf::Url(_)) => Ok(()),
-        None => Ok(()),
-    }
-}
-
 pub fn delete_paper(paper: Paper) -> Result<()> {
     println!("Deleting paper and notes from: {}", paper.title);
-    remove_from_bibliography(&paper.id)?;
-    let metadata = remove_from_metadata(&paper.id)?;
-    match metadata {
-        Some(data) => {
-            remove_pdf(data.pdf)?;
-            remove_notes(data.notes)?;
-            Ok(())
-        }
-        None => Ok(()),
-    }
+    remove_from_bibliography(&paper.id)
 }
