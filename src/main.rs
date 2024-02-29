@@ -15,6 +15,22 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Initialize Bib
+    Init,
+    /// Add new reference
+    Add {
+        /// Initial query for searching
+        #[clap(value_name = "URL", default_value_t = String::from(""))]
+        url: String,
+    },
+    /// Mutable bibliography search
+    Search {
+        /// Initial query for searching
+        #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
+        query: String,
+    },
+    /// Immutable bliography search
+    Peek,
     /// Manage bib stacks
     Stack {
         /// Stack name
@@ -39,14 +55,11 @@ enum Commands {
         )]
         rename: bool,
     },
-    /// Export notes
+    /// Export bib file
     Export {
-        /// Wether to also export notes
-        #[clap(short, long, default_value_t = false)]
-        notes: bool,
-        /// Wheter to also export pdfs
-        #[clap(short, long, default_value_t = false)]
-        pdfs: bool,
+        /// Specify filename
+        #[clap(value_name = "FILENAME")]
+        out: Option<String>,
     },
     /// Switch into stack
     Checkout {
@@ -57,53 +70,40 @@ enum Commands {
         #[clap(short, long, default_value_t = false)]
         new: bool,
     },
-    /// Merge changes from target stack
+    /// Push references into target stack
+    Yeet {
+        /// Yeet to remote
+        #[clap(value_name = "REMOTE")]
+        remote: Option<String>,
+
+        /// Stack to yeet towards
+        #[clap(value_name = "STACK")]
+        stack: String,
+    },
+    /// Pull references from target stack
+    Yank {
+        /// If target is remote
+        #[clap(value_name = "REMOTE")]
+        remote: Option<String>,
+
+        /// Target branch. Defaults to base.
+        #[clap(value_name = "STACK")]
+        stack: String,
+    },
+    /// Merge current stack with target stack
     Merge {
         /// Add new reference along with it
         #[clap(value_name = "STACK")]
         stack: String,
     },
-    /// Push changes towards target stack
-    Yeet {
-        /// Add new reference along with it. Defaults to base.
-        #[clap(value_name = "STACK")]
-        stack: String,
-    },
-    /// Bring references from target stack
-    Yank {
-        /// Target branch. Defaults to base.
-        #[clap(value_name = "STACK")]
-        stack: Option<String>,
-    },
-    /// Fork current stack into new stack
+    /// Fork current stack into a new stack
     Fork {
         /// New stack name
         #[clap(value_name = "NAME")]
         stack: String,
     },
-    /// Manually add new reference
-    Add {
-        /// Url to pdf
-        #[clap(short, long)]
-        url: Option<String>,
-    },
-    /// Mutable search
-    Search {
-        /// Initial query for searching
-        #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
-        query: String,
-    },
-    /// Immutable search of most common
-    Peek,
     /// Clean up all notes and references, find pdfs etc
     Cleanup,
-    Debug {
-        /// Url to pdf
-        #[clap(short, long, group = "from")]
-        url: String,
-    },
-    /// Initialize Bib
-    Init,
 }
 fn main() {
     let cli = Cli::parse();
@@ -129,13 +129,13 @@ fn main() {
             Ok(()) => println!("Merging {} stack", stack),
             Err(err) => println!("BIB error: {}", err),
         },
-        Commands::Yeet { stack } => match commands::stack::yeet(stack.clone()) {
+        Commands::Yeet { remote, stack } => match commands::stack::yeet(remote, stack.clone()) {
             Ok(()) => println!("Yeeting into {} stack", stack),
             Err(err) => println!("BIB error: {}", err),
         },
-        Commands::Yank { stack } => match stack {
-            Some(stack) => println!("Yanking from {} stack", stack),
-            None => println!("Yanking from base stack"),
+        Commands::Yank { remote, stack } => match commands::stack::yank(remote, stack.clone()) {
+            Ok(()) => println!("Yanking from {} stack", stack),
+            Err(err) => println!("BIB error: {}", err),
         },
         Commands::Fork { stack } => match commands::stack::fork(stack.clone()) {
             Ok(oldname) => println!("Forking {} stack into as {}", oldname, stack),
@@ -143,13 +143,10 @@ fn main() {
         },
         Commands::Search { query } => commands::search::search(query),
         Commands::Peek => commands::search::peek(),
-        Commands::Export { notes, pdfs } => {
-            println!("Exporting notes:{}, Exporting Pdfs:{}", notes, pdfs)
-        }
-        Commands::Cleanup => println!("Cleanup on aisle 3"),
-        Commands::Debug { url } => match commands::debug::run(&url) {
-            Ok(()) => (),
-            Err(err) => println!("BIB error: {}", err),
+        Commands::Export { out } => match out {
+            Some(out) => println!("Printing current stack to: {},bib", out),
+            None => println!("Printing current stack to stack.bib"),
         },
+        Commands::Cleanup => println!("Cleanup on aisle 3"),
     }
 }

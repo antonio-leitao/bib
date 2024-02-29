@@ -4,8 +4,10 @@ use shellexpand::tilde;
 use std::fs;
 use std::io::{BufReader, Read, Write};
 use std::path::Path;
+use std::path::PathBuf;
 use toml;
 
+//maybe make this part of the config
 pub const EDITOR: &str = "nvim";
 
 fn directory_exists(directory_path: &str) -> bool {
@@ -38,17 +40,13 @@ fn read_config_file() -> Result<Config> {
 pub fn save_config_file(config: &Config) -> Result<()> {
     // Serialize the Config struct to TOML
     let toml_content = toml::to_string_pretty(config)?;
-
     // Create the directory if it doesn't exist
     let dir = tilde("~/.bib").to_string();
     fs::create_dir_all(&dir)?;
-
     // Create and write to the config.toml file
     let file_path = dir + "/config.toml";
     let mut file = fs::File::create(&file_path)?;
-
     file.write_all(toml_content.as_bytes())?;
-
     Ok(())
 }
 
@@ -62,28 +60,25 @@ pub fn list_stacks() -> Result<Vec<String>> {
     if !directory_exists(&dir) {
         bail!("Bib not initiated, run Bib init");
     };
+    let mut stacks = Vec::new();
     let entries = fs::read_dir(dir)?;
-    let mut directories = Vec::new();
     for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            if let Some(dir_name) = path.file_name() {
-                if let Some(dir_str) = dir_name.to_str() {
-                    directories.push(dir_str.to_string());
-                }
-            }
+        let file_name = entry?.file_name();
+        let file_name_str = file_name.to_string_lossy();
+        if file_name_str.ends_with(".bib") {
+            let stack_name = file_name_str.trim_end_matches(".bib").to_string();
+            stacks.push(stack_name);
         }
     }
-
-    Ok(directories)
+    Ok(stacks)
 }
-pub fn base_dir() -> Result<String> {
+pub fn base_bib_path() -> Result<PathBuf> {
     let stack = current_stack()?;
-    let path = format!("~/.bib/{}", stack);
-    let dir = tilde(&path).to_string();
-    if !directory_exists(&dir) {
+    let bib_file = format!("{}.bib", stack);
+    let base_dir = tilde("~/.bib").to_string();
+    let bib_path = Path::new(&base_dir).join(bib_file);
+    if !bib_path.exists() {
         bail!("Could not find stack. Run bib stack {} to create", stack);
-    };
-    Ok(dir)
+    }
+    Ok(bib_path)
 }

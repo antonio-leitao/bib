@@ -9,6 +9,11 @@ use std::io::Read;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
+enum URL {
+    Empty,
+    Arxiv(String),
+}
+
 fn prompt_message() -> Result<String> {
     // Create a temporary file
     let temp_file = NamedTempFile::new()?;
@@ -36,8 +41,8 @@ pub fn add_paper_to_stack(paper: Paper) -> Result<()> {
     bibfile::save_bibliography(bibliography)
 }
 
-fn add_from_url(url: &str) -> Result<()> {
-    let content = prompt_message()?;
+fn add_bibtex(content: &str) -> Result<()> {
+    // let content = prompt_message()?;
     let bib = read_bibtex(&content)?;
     //get only the first entry
     if let Some(entry) = bib.into_iter().next() {
@@ -49,30 +54,20 @@ fn add_from_url(url: &str) -> Result<()> {
     }
 }
 
-fn add_bibtex() -> Result<()> {
-    let content = prompt_message()?;
-    let bib = read_bibtex(&content)?;
-    for entry in bib.into_iter() {
-        let paper =
-            parse_entry(entry).map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))?;
-        add_paper_to_stack(paper)?;
+fn read_url(url: String) -> URL {
+    if url.is_empty() {
+        return URL::Empty;
     }
-    Ok(())
+    return URL::Arxiv(url);
 }
 
-pub fn add(url: Option<String>) -> Result<()> {
+pub fn add(url: String) -> Result<()> {
     //currently only implements arxiv links could be expanded
-    let content = match url {
-        Some(link) => match parser::arxiv::get_bib(&link) {
-            Ok(bib) => bib,
-            Err(err) => {
-                println!("{}", err);
-                prompt_message()?
-            }
-        },
-        None => prompt_message()?,
+    let content = match read_url(url) {
+        URL::Empty => prompt_message()?,
+        URL::Arxiv(url) => parser::arxiv::get_bib(&url)?,
     };
     // let bib = read_bibtex(&content)?;
     println!("{}", content);
-    Ok(())
+    add_bibtex(&content)
 }

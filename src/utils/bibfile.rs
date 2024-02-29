@@ -83,23 +83,21 @@ pub fn read_bibtex(bib_content: &str) -> Result<Bibliography> {
 }
 
 pub fn save_other_bibliography(bibliography: Bibliography, from: &str) -> Result<()> {
-    let dir = tilde(&format!("~/.bib/{}", from)).to_string();
-    let bib_path = Path::new(&dir).join("bibliography.bib");
+    let dir = tilde(&format!("~/.bib/{}.bib", from)).to_string();
+    let bib_path = Path::new(&dir);
     let mut file = fs::File::create(bib_path)?;
     file.write_all(bibliography.to_biblatex_string().as_bytes())?;
     Ok(())
 }
 pub fn save_bibliography(bibliography: Bibliography) -> Result<()> {
-    let base_dir = settings::base_dir()?;
-    let bib_path = Path::new(&base_dir).join("bibliography.bib");
+    let bib_path = settings::base_bib_path()?;
     let mut file = fs::File::create(bib_path)?;
     file.write_all(bibliography.to_biblatex_string().as_bytes())?;
     Ok(())
 }
 
 pub fn read_bibliography() -> Result<Bibliography> {
-    let base_dir = settings::base_dir()?;
-    let bib_path = Path::new(&base_dir).join("bibliography.bib");
+    let bib_path = settings::base_bib_path()?;
     let mut bib_content = String::new();
     if !bib_path.exists() {
         // If the draft file doesn't exist, create an empty one
@@ -114,8 +112,8 @@ pub fn read_bibliography() -> Result<Bibliography> {
 }
 
 pub fn read_other_bibliography(from: &str) -> Result<Bibliography> {
-    let dir = tilde(&format!("~/.bib/{}", from)).to_string();
-    let bib_path = Path::new(&dir).join("bibliography.bib");
+    let dir = tilde(&format!("~/.bib/{}.bib", from)).to_string();
+    let bib_path = Path::new(&dir);
     let mut bib_content = String::new();
     if !bib_path.exists() {
         // If the draft file doesn't exist, create an empty one
