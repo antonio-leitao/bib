@@ -72,20 +72,12 @@ enum Commands {
     },
     /// Push references into target stack
     Yeet {
-        /// Yeet to remote
-        #[clap(value_name = "REMOTE")]
-        remote: Option<String>,
-
         /// Stack to yeet towards
         #[clap(value_name = "STACK")]
         stack: String,
     },
     /// Pull references from target stack
     Yank {
-        /// If target is remote
-        #[clap(value_name = "REMOTE")]
-        remote: Option<String>,
-
         /// Target branch. Defaults to base.
         #[clap(value_name = "STACK")]
         stack: String,
@@ -129,11 +121,11 @@ fn main() {
             Ok(()) => println!("Merging {} stack", stack),
             Err(err) => println!("BIB error: {}", err),
         },
-        Commands::Yeet { remote, stack } => match commands::stack::yeet(remote, stack.clone()) {
+        Commands::Yeet { stack } => match commands::stack::yeet(stack.clone()) {
             Ok(()) => println!("Yeeting into {} stack", stack),
             Err(err) => println!("BIB error: {}", err),
         },
-        Commands::Yank { remote, stack } => match commands::stack::yank(remote, stack.clone()) {
+        Commands::Yank { stack } => match commands::stack::yank(stack.clone()) {
             Ok(()) => println!("Yanking from {} stack", stack),
             Err(err) => println!("BIB error: {}", err),
         },

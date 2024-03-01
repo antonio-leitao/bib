@@ -1,4 +1,3 @@
-use crate::commands::remote;
 use crate::settings;
 use crate::utils::bibfile;
 use anyhow::{bail, Result};
@@ -140,21 +139,13 @@ pub fn merge(from: String) -> Result<()> {
     delete_stack(from)
 }
 
-pub fn yeet(remote: Option<String>, into: String) -> Result<()> {
-    match remote {
-        Some(remote) => remote::yeet(remote, into),
-        None => {
-            let from = settings::current_stack()?;
-            merge_stacks(from, into)
-        }
-    }
+pub fn yeet(into: String) -> Result<()> {
+    let from = settings::current_stack()?;
+    merge_stacks(from, into)
 }
 
-pub fn yank(remote: Option<String>, from: String) -> Result<()> {
-    match remote {
-        Some(remote) => remote::yank(remote, from)?,
-        None => println!("Pulling from stack {}", from),
-    };
+pub fn yank(from: String) -> Result<()> {
+    println!("Pulling from stack {}", from);
     Ok(())
 }
 
