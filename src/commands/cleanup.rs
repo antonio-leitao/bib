@@ -12,6 +12,6 @@ fn remove_from_bibliography(key: &str) -> Result<()> {
 }
 
 pub fn delete_paper(paper: Paper) -> Result<()> {
-    println!("Deleting paper and notes from: {}", paper.title);
+    println!("Deleting reference: {}", paper.title);
     remove_from_bibliography(&paper.id)
 }

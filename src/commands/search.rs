@@ -37,7 +37,7 @@ fn immutable_search() -> Result<()> {
     match ui::display_list(action, color, first_ten, String::new(), false, false) {
         Some(action) => match action {
             ui::Action::Open(paper) => open_pdf(paper),
-            _ => bail!("Action not allowed in online search"),
+            _ => bail!("Action not allowed in immutable search"),
         },
         None => Ok(()),
     }

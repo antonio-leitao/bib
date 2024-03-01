@@ -1,9 +1,9 @@
 use std::cmp::min;
 use std::io::{self, Stdout, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+// use std::sync::atomic::{AtomicBool, Ordering};
+// use std::sync::Arc;
+// use std::thread;
+// use std::time::Duration;
 use sublime_fuzzy::best_match;
 use termion::color;
 use termion::event::Key;
@@ -513,43 +513,43 @@ pub fn display_list<T: Item + Clone>(
     model.selected
 }
 
-pub struct Spinner {
-    running: Arc<AtomicBool>,
-    text: String,
-}
-
-impl Spinner {
-    pub fn new(text: String) -> Spinner {
-        Spinner {
-            running: Arc::new(AtomicBool::new(false)),
-            text,
-        }
-    }
-
-    pub fn start(&self) {
-        if self.running.load(Ordering::SeqCst) {
-            return;
-        }
-        let text = self.text.clone();
-        self.running.store(true, Ordering::SeqCst);
-        let running_clone = Arc::clone(&self.running);
-
-        thread::spawn(move || {
-            let spin_chars: Vec<char> = vec!['/', '-', '\\', '|'];
-            let mut spin_idx = 0;
-
-            while running_clone.load(Ordering::SeqCst) {
-                print!("{}... {}\r", text, spin_chars[spin_idx]);
-                spin_idx = (spin_idx + 1) % spin_chars.len();
-                std::io::stdout().flush().expect("Failed to flush stdout");
-                thread::sleep(Duration::from_millis(100));
-            }
-        });
-    }
-
-    pub fn stop(&self) {
-        self.running.store(false, Ordering::SeqCst);
-        println!("{}... Done", self.text); // Clear the spinner character
-        std::io::stdout().flush().expect("Failed to flush stdout");
-    }
-}
+// pub struct Spinner {
+//     running: Arc<AtomicBool>,
+//     text: String,
+// }
+//
+// impl Spinner {
+//     pub fn new(text: String) -> Spinner {
+//         Spinner {
+//             running: Arc::new(AtomicBool::new(false)),
+//             text,
+//         }
+//     }
+//
+//     pub fn start(&self) {
+//         if self.running.load(Ordering::SeqCst) {
+//             return;
+//         }
+//         let text = self.text.clone();
+//         self.running.store(true, Ordering::SeqCst);
+//         let running_clone = Arc::clone(&self.running);
+//
+//         thread::spawn(move || {
+//             let spin_chars: Vec<char> = vec!['/', '-', '\\', '|'];
+//             let mut spin_idx = 0;
+//
+//             while running_clone.load(Ordering::SeqCst) {
+//                 print!("{}... {}\r", text, spin_chars[spin_idx]);
+//                 spin_idx = (spin_idx + 1) % spin_chars.len();
+//                 std::io::stdout().flush().expect("Failed to flush stdout");
+//                 thread::sleep(Duration::from_millis(100));
+//             }
+//         });
+//     }
+//
+//     pub fn stop(&self) {
+//         self.running.store(false, Ordering::SeqCst);
+//         println!("{}... Done", self.text); // Clear the spinner character
+//         std::io::stdout().flush().expect("Failed to flush stdout");
+//     }
+// }

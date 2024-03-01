@@ -37,7 +37,7 @@ The api is done as to mimic `git` as close as possible
 - `bib stack --delete <STACK>` : Deletes target stacked named `STACK`, cannot delete active one.
 - `bib stack --rename <NAME>` : Renames active stack to `NAME`. 
 
-#### Swithing stacks
+#### Switching stacks
 
 - `bib checkout <STACK>` : Switches to target stack.
 - `bib checkout --new <STACK>` : Creates new stack `NEW_STACK` and switches to it.
@@ -52,7 +52,7 @@ Duplicate entries are updated.
 - `bib yeet <STACK>` : Pushes current stack into target stack. Current stack is **not** deleted.
 - `bib merge <STACK>` : Pulls target stack into current stack. **Target stack is deleted**.
 > [!CAUTION]
-> Merge is a yank that deltes the target.
+> Merge is a yank that deletes the target.
 - `bib fork <NEW_STACK>` : Duplicates active stack under new name, switches to new stack.
 
 ## Managing references

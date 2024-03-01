@@ -10,6 +10,9 @@ fn merge_stacks(from: String, into: String) -> Result<()> {
     if !stack_exists(&from)? {
         bail!("Stack named {} does not exist", from);
     };
+    if !stack_exists(&into)? {
+        bail!("Stack named {} does not exist", into);
+    };
     if from == into {
         bail!("Stacks must be different");
     }
@@ -18,13 +21,13 @@ fn merge_stacks(from: String, into: String) -> Result<()> {
 
 fn merge_bibfiles(from: &str, into: &str) -> Result<()> {
     //read both metadatas,
-    let mut from_bib = bibfile::read_other_bibliography(from)?;
-    let into_bib = bibfile::read_other_bibliography(into)?;
+    let from_bib = bibfile::read_other_bibliography(from)?;
+    let mut into_bib = bibfile::read_other_bibliography(into)?;
     //into gets put in from because insert overwrites
-    for entry in into_bib.into_iter() {
-        from_bib.insert(entry);
+    for entry in from_bib.into_iter() {
+        into_bib.insert(entry);
     }
-    bibfile::save_other_bibliography(from_bib, from)
+    bibfile::save_other_bibliography(into_bib, into)
 }
 
 fn delete_stack(stack: String) -> Result<()> {
@@ -145,8 +148,8 @@ pub fn yeet(into: String) -> Result<()> {
 }
 
 pub fn yank(from: String) -> Result<()> {
-    println!("Pulling from stack {}", from);
-    Ok(())
+    let into = settings::current_stack()?;
+    merge_stacks(from, into)
 }
 
 pub fn stack(stack: String, delete: bool, rename: bool) {
