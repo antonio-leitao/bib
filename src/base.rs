@@ -102,3 +102,4 @@ fn fit_string_to_length(input: &str, max_length: usize) -> String {
     result.push_str("...");
     result
 }
+

@@ -23,6 +23,12 @@ enum Commands {
         #[clap(value_name = "URL", default_value_t = String::from(""))]
         url: String,
     },
+    /// Open pdf manually
+    Open {
+        /// Initial query for searching
+        #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
+        query: String,
+    },
     /// Mutable bibliography search
     Search {
         /// Initial query for searching
@@ -31,6 +37,8 @@ enum Commands {
     },
     /// Immutable bliography search
     Peek,
+    /// Print list
+    List,
     /// Manage bib stacks
     Stack {
         /// Stack name
@@ -117,6 +125,10 @@ fn main() {
             Ok(()) => println!("Succesfully added reference"),
             Err(err) => println!("BIB error: {}", err),
         },
+        Commands::Open { query } => match commands::open::open(query) {
+            Ok(()) => println!("Openend"),
+            Err(err) => println!("BIB error: {}", err),
+        },
         Commands::Merge { stack } => match commands::stack::merge(stack.clone()) {
             Ok(()) => println!("Merging {} stack", stack),
             Err(err) => println!("BIB error: {}", err),
@@ -135,6 +147,10 @@ fn main() {
         },
         Commands::Search { query } => commands::search::search(query),
         Commands::Peek => commands::search::peek(),
+        Commands::List => match commands::search::list() {
+            Ok(()) => (),
+            Err(err) => println!("BIB error: {}", err),
+        },
         Commands::Export { out } => match out {
             Some(out) => println!("Printing current stack to: {},bib", out),
             None => println!("Printing current stack to stack.bib"),

@@ -1,4 +1,5 @@
 extern crate quick_xml;
+use crate::utils::fmt::Clean;
 use anyhow::{bail, Result};
 use reqwest::blocking::get;
 use serde::Deserialize;
@@ -123,7 +124,7 @@ fn generate_biblatex(entry: &Entry, arxiv_id: &str) -> String {
     biblatex.push_str("},\n");
     //title
     biblatex.push_str("    title = {");
-    biblatex.push_str(&entry.title);
+    biblatex.push_str(&entry.title.clean());
     biblatex.push_str("},\n");
     //arxiv id
     biblatex.push_str("    eprint = {");

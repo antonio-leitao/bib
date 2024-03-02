@@ -24,6 +24,11 @@ brew install bib
 `bib` allows for adding and importing bib references, both manually and from the internet.
 It also allows for associating a PDF file and a file with Notes.
 This is all done inside a powerfull `git`-like branch managing system.
+To get started run:
+
+```text
+bib init
+```
 
 ## Stacks
 `git` has branches, `bib` has stacks.
@@ -32,7 +37,7 @@ The api is done as to mimic `git` as close as possible
 
 #### Managing Stacks
 
-- `bib stack` : Lists all staks including active one. 
+- `bib stack` : Lists all stacks including active one. 
 - `bib stack <NAME>` : Creates new empty stack named `NAME`.
 - `bib stack --delete <STACK>` : Deletes target stacked named `STACK`, cannot delete active one.
 - `bib stack --rename <NAME>` : Renames active stack to `NAME`. 

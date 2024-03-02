@@ -1,5 +1,6 @@
 use crate::base::Paper;
 use crate::settings;
+use crate::utils::fmt::Clean;
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person, RetrievalError};
 use regex::Regex;
@@ -26,7 +27,7 @@ fn format_authors(authors: Vec<Person>) -> (String, String) {
         2 => format!("{} and {}", authors[0].name, authors[1].name),
         _ => format!("{} et al.", authors[0].name),
     };
-    let formatted_authors = formatted.replace("\\n", "").replace("\\t", "");
+    let formatted_authors = formatted.clean();
 
     let author_line = authors
         .iter()
