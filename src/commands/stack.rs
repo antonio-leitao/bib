@@ -48,10 +48,11 @@ fn delete_stack(stack: String) -> Result<()> {
     let path = format!("~/.bib/{}.bib", stack);
     let dir = tilde(&path).to_string();
     fs::remove_file(dir)?;
+    fmt::delete(stack);
     Ok(())
 }
 
-fn rename_stack(new_name: String) -> Result<String> {
+fn rename_stack(new_name: String) -> Result<()> {
     if stack_exists(&new_name)? {
         bail!("Stack named {} already exists", new_name);
     }
@@ -60,9 +61,12 @@ fn rename_stack(new_name: String) -> Result<String> {
     let new_path = tilde(&format!("~/.bib/{}.bib", new_name)).to_string();
     fs::rename(&old_path, &new_path)?;
     //change config
-    let config = settings::Config { stack: new_name };
+    let config = settings::Config {
+        stack: new_name.clone(),
+    };
     settings::save_config_file(&config)?;
-    Ok(old_name)
+    fmt::rename(old_name, new_name);
+    Ok(())
 }
 
 fn new_stack(name: String, initial: bool) -> Result<()> {
@@ -73,6 +77,9 @@ fn new_stack(name: String, initial: bool) -> Result<()> {
     let new_bib = tilde(&format!("~/.bib/{}.bib", name)).to_string();
     let mut file = fs::File::create(&new_bib)?;
     file.write_all(b"")?;
+    if !initial {
+        fmt::new(name);
+    }
     Ok(())
 }
 
@@ -81,41 +88,45 @@ fn stack_exists(stack: &String) -> Result<bool> {
     Ok(stack_list.contains(stack))
 }
 
-fn show_stacks() {
-    match (settings::current_stack(), settings::list_stacks()) {
-        (Ok(current_stack), Ok(stack_list)) => {
-            for stack in stack_list {
-                if stack == current_stack {
-                    println!(
-                        "* {}{}{}",
-                        color::Fg(color::Green),
-                        stack,
-                        color::Fg(color::Reset)
-                    );
-                } else {
-                    println!("  {}", stack);
-                }
-            }
+fn show_stacks() -> Result<()> {
+    let current_stack = settings::current_stack()?;
+    let stack_list = settings::list_stacks()?;
+
+    for stack in stack_list {
+        if stack == current_stack {
+            println!(
+                "* {}{}{}",
+                color::Fg(color::Green),
+                stack,
+                color::Fg(color::Reset)
+            );
+        } else {
+            println!("  {}", stack);
         }
-        (Ok(_), Err(err)) => println!("{}", err),
-        (Err(err), Ok(_)) => println!("{}", err),
-        (Err(err1), Err(err2)) => println!("{}\n{}", err1, err2),
-    };
+    }
+    Ok(())
 }
 
-pub fn checkout(stack: String, new: bool) -> Result<()> {
+pub fn checkout(into: String, new: bool) -> Result<()> {
     //loads config
-    if !stack_exists(&stack)? {
+    if !stack_exists(&into)? {
         if new {
-            new_stack(stack.clone(), false)?;
+            new_stack(into.clone(), false)?;
             //create new stack
         } else {
-            bail!("Stack does not exist, run 'bib stack {} to create'", stack);
+            bail!("Stack does not exist, run 'bib stack {} to create'", into);
         };
     };
-    //move to it
-    let config = settings::Config { stack };
-    settings::save_config_file(&config)
+    //pretend to move into it
+    let from = settings::current_stack()?;
+    //actualy move into it
+    let config = settings::Config {
+        stack: into.clone(),
+    };
+    settings::save_config_file(&config)?;
+    //inform
+    fmt::switch(from, into);
+    Ok(())
 }
 
 pub fn init() -> Result<()> {
@@ -125,10 +136,12 @@ pub fn init() -> Result<()> {
     };
     settings::save_config_file(&config)?;
     //create base stack
-    new_stack(String::from("base"), true)
+    new_stack(String::from("base"), true)?;
+    fmt::init();
+    Ok(())
 }
 
-pub fn fork(new_name: String) -> Result<String> {
+pub fn fork(new_name: String) -> Result<()> {
     if stack_exists(&new_name)? {
         bail!("Stack named {} already exists", new_name);
     }
@@ -137,48 +150,45 @@ pub fn fork(new_name: String) -> Result<String> {
     let new_path = tilde(&format!("~/.bib/{}.bib", new_name)).to_string();
     // Copy the contents of the old stack to the new stack
     fs::copy(&old_path, &new_path)?;
+    fmt::new(new_name.clone());
+    let bib = bibfile::read_other_bibliography(&from)?;
+    fmt::yeet(from.clone(), None, new_name.clone(), bib.len());
     //change config
-    let config = settings::Config { stack: new_name };
+    let config = settings::Config {
+        stack: new_name.clone(),
+    };
     settings::save_config_file(&config)?;
-    Ok(from)
+    fmt::switch(from, new_name);
+    Ok(())
 }
 
 pub fn merge(from: String) -> Result<()> {
     let into = settings::current_stack()?;
-    merge_stacks(from.clone(), into)?;
+    let number = merge_stacks(from.clone(), into.clone())?;
+    fmt::merge(from.clone(), into, number);
     delete_stack(from)
 }
 
 pub fn yeet(into: String) -> Result<()> {
     let from = settings::current_stack()?;
     let number = merge_stacks(from.clone(), into.clone())?;
-    fmt::print_yeet(from, None, into, number);
+    fmt::yeet(from, None, into, number);
     Ok(())
 }
 
 pub fn yank(from: String) -> Result<()> {
     let into = settings::current_stack()?;
     let number = merge_stacks(from.clone(), into.clone())?;
-    fmt::print_yank(from, None, into, number);
+    fmt::yank(from, None, into, number);
     Ok(())
 }
 
-pub fn stack(stack: String, delete: bool, rename: bool) {
+pub fn stack(stack: String, delete: bool, rename: bool) -> Result<()> {
     match (stack.len(), delete, rename) {
         (0, false, false) => show_stacks(),
-        (_, false, false) => match new_stack(stack.clone(), false) {
-            Ok(()) => println!("Created stack {}", stack),
-            Err(err) => println!("Bib error: {}", err),
-        },
-        (_, true, false) => match delete_stack(stack.clone()) {
-            //cannot delete current stack (ever)
-            Ok(()) => println!("Successfully deleted {} stack", stack),
-            Err(err) => println!("Bib error: {}", err),
-        },
-        (_, false, true) => match rename_stack(stack.clone()) {
-            Ok(old_name) => println!("Stack renamed {} => {}", old_name, stack),
-            Err(err) => println!("Bib error: {}", err),
-        },
-        _ => println!("Wrong usage. Type --help for command usage."),
+        (_, false, false) => new_stack(stack, false),
+        (_, true, false) => delete_stack(stack),
+        (_, false, true) => rename_stack(stack),
+        _ => bail!("Wrong usage. Type --help for command usage."),
     }
 }

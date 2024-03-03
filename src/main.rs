@@ -3,6 +3,7 @@ mod commands;
 mod parser;
 mod settings;
 mod utils;
+use crate::utils::fmt;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -107,54 +108,28 @@ enum Commands {
 }
 fn main() {
     let cli = Cli::parse();
-    match cli.command {
-        Commands::Init => match commands::stack::init() {
-            Ok(()) => println!("BIB intialized"),
-            Err(err) => println!("BIB error: {}", err),
-        },
+    let result = match cli.command {
+        Commands::Init => commands::stack::init(),
         Commands::Stack {
             stack,
             delete,
             rename,
         } => commands::stack::stack(stack, delete, rename),
-        Commands::Checkout { stack, new } => match commands::stack::checkout(stack.clone(), new) {
-            Ok(()) => println!("Switched to {} stack", stack),
-            Err(err) => println!("BIB error: {}", err),
-        },
-        Commands::Add { url } => match commands::add::add(url) {
-            Ok(()) => println!("Succesfully added reference"),
-            Err(err) => println!("BIB error: {}", err),
-        },
-        Commands::Open { query } => match commands::open::open(query) {
-            Ok(()) => (),
-            Err(err) => println!("BIB error: {}", err),
-        },
-        Commands::Merge { stack } => match commands::stack::merge(stack.clone()) {
-            Ok(()) => println!("Merging {} stack", stack),
-            Err(err) => println!("BIB error: {}", err),
-        },
-        Commands::Yeet { stack } => match commands::stack::yeet(stack.clone()) {
-            Ok(()) => println!("Yeeting into {} stack", stack),
-            Err(err) => println!("BIB error: {}", err),
-        },
-        Commands::Yank { stack } => match commands::stack::yank(stack.clone()) {
-            Ok(()) => println!("Yanking from {} stack", stack),
-            Err(err) => println!("BIB error: {}", err),
-        },
-        Commands::Fork { stack } => match commands::stack::fork(stack.clone()) {
-            Ok(oldname) => println!("Forking {} stack into as {}", oldname, stack),
-            Err(err) => println!("BIB error: {}", err),
-        },
+        Commands::Checkout { stack, new } => commands::stack::checkout(stack, new),
+        Commands::Add { url } => commands::add::add(url),
+        Commands::Open { query } => commands::open::open(query),
+        Commands::Merge { stack } => commands::stack::merge(stack),
+        Commands::Yeet { stack } => commands::stack::yeet(stack),
+        Commands::Yank { stack } => commands::stack::yank(stack),
+        Commands::Fork { stack } => commands::stack::fork(stack),
         Commands::Search { query } => commands::search::search(query),
         Commands::Peek => commands::search::peek(),
-        Commands::List => match commands::search::list() {
-            Ok(()) => (),
-            Err(err) => println!("BIB error: {}", err),
-        },
-        Commands::Export { out } => match out {
-            Some(out) => println!("Printing current stack to: {},bib", out),
-            None => println!("Printing current stack to stack.bib"),
-        },
-        Commands::Cleanup => println!("Cleanup on aisle 3"),
+        Commands::List => commands::search::list(),
+        Commands::Export { out } => commands::export::export(out),
+        Commands::Cleanup => Ok(println!("Cleanup on aisle 3")),
+    };
+    match result {
+        Ok(()) => (),
+        Err(err) => fmt::erro(err.to_string()),
     }
 }

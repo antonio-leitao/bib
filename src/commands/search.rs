@@ -10,7 +10,7 @@ fn open_pdf(paper: Paper) -> Result<()> {
     paper.open_pdf()
 }
 
-fn search_stack(query: String) -> Result<()> {
+pub fn search(query: String) -> Result<()> {
     let bibliography = bibfile::read_bibliography()?;
     let mut items = bibfile::parse_bibliography(bibliography);
     items.reverse();
@@ -26,7 +26,7 @@ fn search_stack(query: String) -> Result<()> {
     }
 }
 
-fn immutable_search() -> Result<()> {
+pub fn peek() -> Result<()> {
     let bibliography = bibfile::read_bibliography()?;
     let mut items = bibfile::parse_bibliography(bibliography);
     items.reverse();
@@ -43,22 +43,6 @@ fn immutable_search() -> Result<()> {
             _ => bail!("Action not allowed in immutable search"),
         },
         None => Ok(()),
-    }
-}
-pub fn peek() {
-    let result = immutable_search();
-    match result {
-        Ok(_) => (),
-        Err(err) => println!("{}", err),
-    }
-}
-
-pub fn search(query: String) {
-    //Loading bigliography
-    let result = search_stack(query);
-    match result {
-        Ok(_) => (),
-        Err(err) => println!("{}", err),
     }
 }
 

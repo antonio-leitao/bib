@@ -2,6 +2,7 @@ use crate::base::Paper;
 use crate::parser;
 use crate::settings;
 use crate::utils::bibfile::{self, parse_entry, read_bibtex};
+use crate::utils::fmt;
 // use crate::utils::ui::Spinner;
 use anyhow::{anyhow, Result};
 use std::fs;
@@ -38,7 +39,11 @@ pub fn add_paper_to_stack(paper: Paper) -> Result<()> {
     //MAKE SURE TO ADD IT ON THE TOP!
     //OR REVERSE BIBLIOGRAPHY WHEN SHOWING
     bibliography.insert(paper.entry.clone());
-    bibfile::save_bibliography(bibliography)
+    bibfile::save_bibliography(bibliography)?;
+    //print sucess
+    let into = settings::current_stack()?;
+    fmt::add(into, paper);
+    Ok(())
 }
 
 fn add_bibtex(content: &str) -> Result<()> {
@@ -67,7 +72,5 @@ pub fn add(url: String) -> Result<()> {
         URL::Empty => prompt_message()?,
         URL::Arxiv(url) => parser::arxiv::get_bib(&url)?,
     };
-    // let bib = read_bibtex(&content)?;
-    println!("{}", content);
     add_bibtex(&content)
 }
