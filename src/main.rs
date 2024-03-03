@@ -126,7 +126,7 @@ fn main() {
             Err(err) => println!("BIB error: {}", err),
         },
         Commands::Open { query } => match commands::open::open(query) {
-            Ok(()) => println!("Openend"),
+            Ok(()) => (),
             Err(err) => println!("BIB error: {}", err),
         },
         Commands::Merge { stack } => match commands::stack::merge(stack.clone()) {

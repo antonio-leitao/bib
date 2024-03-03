@@ -1,51 +1,29 @@
+use crate::utils::ui::Item;
 use anyhow::Result;
 use std::io::{self, Stdout, Write};
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
-const WORDS: [&str; 20] = [
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-    "fifteen",
-    "sixteen",
-    "seventeen",
-    "eighteen",
-    "nineteen",
-    "twenty",
-];
-
-pub fn prompt_select() -> Result<()> {
+pub fn prompt_select<T: Item + Clone>(items: &[T]) -> Result<usize> {
     let stdin = io::stdin();
     let mut stdout = io::stdout().into_raw_mode().unwrap();
-
+    let (width, _) = termion::terminal_size().unwrap();
     // Move the cursor to the bottom of the previous output before starting
     //hide cursor
     write!(stdout, "{}", termion::cursor::Hide)?;
     let mut current_index = 0;
-    draw_ui(&mut stdout, current_index)?;
+    draw_ui(&mut stdout, current_index, items, width)?;
 
     for c in stdin.keys() {
         match c.unwrap() {
             Key::Up | Key::Char('k') if current_index > 0 => {
                 current_index -= 1;
-                draw_ui(&mut stdout, current_index)?;
+                draw_ui(&mut stdout, current_index, items, width)?;
             }
-            Key::Down | Key::Char('j') if current_index < WORDS.len() - 1 => {
+            Key::Down | Key::Char('j') if current_index < items.len() - 1 => {
                 current_index += 1;
-                draw_ui(&mut stdout, current_index)?;
+                draw_ui(&mut stdout, current_index, items, width)?;
             }
             Key::Char('\n') | Key::Char('q') | Key::Esc | Key::Ctrl('c') => break,
             _ => {}
@@ -59,18 +37,22 @@ pub fn prompt_select() -> Result<()> {
         termion::clear::AfterCursor,
         termion::cursor::Show
     )?;
-    Ok(())
+    Ok(current_index)
 }
 
-fn draw_ui(stdout: &mut RawTerminal<Stdout>, current_index: usize) -> Result<()> {
+fn draw_ui<T: Item + Clone>(
+    stdout: &mut RawTerminal<Stdout>,
+    current_index: usize,
+    items: &[T],
+    width: u16,
+) -> Result<()> {
     // Move the cursor to the first line of the UI
-
-    for (i, word) in WORDS.iter().enumerate() {
+    for (i, word) in items.iter().enumerate() {
         let prefix = if i == current_index { "* " } else { "  " };
-        writeln!(stdout, "{}{}\r", prefix, word)?;
+        writeln!(stdout, "{}{}\r", prefix, word.display(width))?;
     }
 
-    write!(stdout, "{}", termion::cursor::Up(WORDS.len() as u16),)?;
+    write!(stdout, "{}", termion::cursor::Up(items.len() as u16))?;
 
     stdout.flush()?;
     Ok(())

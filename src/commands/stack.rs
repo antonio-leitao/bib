@@ -1,12 +1,12 @@
 use crate::settings;
-use crate::utils::bibfile;
+use crate::utils::{bibfile, fmt};
 use anyhow::{bail, Result};
 use shellexpand::tilde;
 use std::fs;
 use std::io::Write;
 use termion::color;
 
-fn merge_stacks(from: String, into: String) -> Result<()> {
+fn merge_stacks(from: String, into: String) -> Result<usize> {
     if !stack_exists(&from)? {
         bail!("Stack named {} does not exist", from);
     };
@@ -19,15 +19,22 @@ fn merge_stacks(from: String, into: String) -> Result<()> {
     merge_bibfiles(&from, &into)
 }
 
-fn merge_bibfiles(from: &str, into: &str) -> Result<()> {
-    //read both metadatas,
+fn merge_bibfiles(from: &str, into: &str) -> Result<usize> {
+    // Read both metadatas
     let from_bib = bibfile::read_other_bibliography(from)?;
     let mut into_bib = bibfile::read_other_bibliography(into)?;
-    //into gets put in from because insert overwrites
+    // Track the count of elements inserted
+    let mut inserted_count = 0;
+    // Insert entries from 'from_bib' into 'into_bib'
     for entry in from_bib.into_iter() {
-        into_bib.insert(entry);
+        if into_bib.insert(entry).is_none() {
+            inserted_count += 1;
+        }
     }
-    bibfile::save_other_bibliography(into_bib, into)
+    // Save 'into_bib' after merge
+    bibfile::save_other_bibliography(into_bib, into)?;
+    // Return the count of elements inserted
+    Ok(inserted_count)
 }
 
 fn delete_stack(stack: String) -> Result<()> {
@@ -144,12 +151,16 @@ pub fn merge(from: String) -> Result<()> {
 
 pub fn yeet(into: String) -> Result<()> {
     let from = settings::current_stack()?;
-    merge_stacks(from, into)
+    let number = merge_stacks(from.clone(), into.clone())?;
+    fmt::print_yeet(from, None, into, number);
+    Ok(())
 }
 
 pub fn yank(from: String) -> Result<()> {
     let into = settings::current_stack()?;
-    merge_stacks(from, into)
+    let number = merge_stacks(from.clone(), into.clone())?;
+    fmt::print_yank(from, None, into, number);
+    Ok(())
 }
 
 pub fn stack(stack: String, delete: bool, rename: bool) {
