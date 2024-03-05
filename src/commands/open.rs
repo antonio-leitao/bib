@@ -67,7 +67,9 @@ pub fn open(query: String) -> Result<()> {
     }
     //Filter
     let first_ten: Vec<_> = items.iter().take(10).cloned().collect();
-    let index = list::prompt_select(&first_ten)?;
-    println!("{}", items[index].title);
+    match list::prompt_select(&first_ten)? {
+        Some(index) => println!("{}", items[index].title),
+        None => (),
+    };
     Ok(())
 }

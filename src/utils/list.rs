@@ -5,10 +5,11 @@ use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
-pub fn prompt_select<T: Item + Clone>(items: &[T]) -> Result<usize> {
+pub fn prompt_select<T: Item + Clone>(items: &[T]) -> Result<Option<usize>> {
     let stdin = io::stdin();
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let (width, _) = termion::terminal_size().unwrap();
+    let mut selected_index: Option<usize> = None;
     // Move the cursor to the bottom of the previous output before starting
     //hide cursor
     write!(stdout, "{}", termion::cursor::Hide)?;
@@ -25,7 +26,14 @@ pub fn prompt_select<T: Item + Clone>(items: &[T]) -> Result<usize> {
                 current_index += 1;
                 draw_ui(&mut stdout, current_index, items, width)?;
             }
-            Key::Char('\n') | Key::Char('q') | Key::Esc | Key::Ctrl('c') => break,
+            Key::Char('\n') => {
+                selected_index = Some(current_index);
+                break;
+            }
+            Key::Char('q') | Key::Esc | Key::Ctrl('c') => {
+                selected_index = None;
+                break;
+            }
             _ => {}
         }
     }
@@ -37,7 +45,7 @@ pub fn prompt_select<T: Item + Clone>(items: &[T]) -> Result<usize> {
         termion::clear::AfterCursor,
         termion::cursor::Show
     )?;
-    Ok(current_index)
+    Ok(selected_index)
 }
 
 fn draw_ui<T: Item + Clone>(
@@ -49,7 +57,7 @@ fn draw_ui<T: Item + Clone>(
     // Move the cursor to the first line of the UI
     for (i, word) in items.iter().enumerate() {
         let prefix = if i == current_index { "* " } else { "  " };
-        writeln!(stdout, "{}{}\r", prefix, word.display(width))?;
+        writeln!(stdout, "{}{}\r", prefix, word.display(width - 2))?;
     }
 
     write!(stdout, "{}", termion::cursor::Up(items.len() as u16))?;
