@@ -68,7 +68,7 @@ enum Commands {
     Export {
         /// Specify filename
         #[clap(value_name = "FILENAME")]
-        out: Option<String>,
+        filename: Option<String>,
     },
     /// Switch into stack
     Checkout {
@@ -125,7 +125,7 @@ fn main() {
         Commands::Search { query } => commands::search::search(query),
         Commands::Peek => commands::search::peek(),
         Commands::List => commands::search::list(),
-        Commands::Export { out } => commands::export::export(out),
+        Commands::Export { filename } => commands::export::export(filename),
         Commands::Cleanup => Ok(println!("Cleanup on aisle 3")),
     };
     match result {

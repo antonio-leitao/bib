@@ -31,8 +31,6 @@ pub fn peek() -> Result<()> {
     let mut items = bibfile::parse_bibliography(bibliography);
     items.reverse();
     // Sort papers by last_accessed (more recent first)
-    // SORT THE PAPERS! (maybe from top to bottom)
-    // Select the first 5 elements
     let first_ten: Vec<_> = items.iter().take(10).cloned().collect();
     let stack = settings::current_stack()?;
     let action = format!("[{}]", stack.to_uppercase());

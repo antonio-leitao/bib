@@ -101,6 +101,17 @@ pub fn rename(from: String, into: String) {
     );
 }
 
+pub fn export(from: String, into: String) {
+    println!("Exported {} stack", from.clone());
+    println!(
+        "{}{}{} -> {}.bib",
+        color::Fg(color::Green),
+        from,
+        color::Fg(color::Reset),
+        into,
+    );
+}
+
 pub fn add(into: String, paper: Paper) {
     println!("Added reference");
     println!(
@@ -120,6 +131,11 @@ pub fn delete(stack: String) {
         stack
     );
 }
-pub fn erro(err:String){
-    println!("{}error{}: {}", color::Fg(color::Red), color::Fg(color::Reset),err);
+pub fn erro(err: String) {
+    println!(
+        "{}error{}: {}",
+        color::Fg(color::Red),
+        color::Fg(color::Reset),
+        err
+    );
 }

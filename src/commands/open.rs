@@ -60,7 +60,7 @@ pub fn open(query: String) -> Result<()> {
         match apply_filter(&query, &items) {
             Some(elems) => items = elems,
             None => {
-                println!("\tNo itens match the query");
+                println!("\tNo items match the query");
                 return Ok(());
             }
         };
@@ -68,8 +68,7 @@ pub fn open(query: String) -> Result<()> {
     //Filter
     let first_ten: Vec<_> = items.iter().take(10).cloned().collect();
     match list::prompt_select(&first_ten)? {
-        Some(index) => println!("{}", items[index].title),
-        None => (),
-    };
-    Ok(())
+        Some(index) => items[index].open_pdf(),
+        None => Ok(()),
+    }
 }

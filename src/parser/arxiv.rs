@@ -1,6 +1,7 @@
 extern crate quick_xml;
 use crate::utils::fmt::Clean;
 use anyhow::{bail, Result};
+use regex::Regex;
 use reqwest::blocking::get;
 use serde::Deserialize;
 
@@ -62,14 +63,20 @@ fn get_arxiv_pdf_link(arxiv_id: &str) -> String {
     format!("https://arxiv.org/pdf/{}.pdf", arxiv_id)
 }
 
-fn first_non_stop_word(entry: &Entry) -> Option<&str> {
+fn first_non_stop_word(entry: &Entry) -> Option<String> {
     let title_words: Vec<&str> = entry.title.split_whitespace().collect();
     for word in title_words {
-        if !STOP_WORD.contains(&word.to_lowercase().as_str()) {
-            return Some(word);
+        let clean_word = remove_non_alphabetic(word);
+        if !STOP_WORD.contains(&clean_word.to_lowercase().as_str()) {
+            return Some(clean_word);
         }
     }
     None
+}
+
+fn remove_non_alphabetic(input: &str) -> String {
+    let re = Regex::new(r"[^a-zA-Z ]").unwrap();
+    re.replace_all(input, "").to_string()
 }
 
 fn create_key(entry: &Entry) -> Option<String> {
@@ -82,13 +89,10 @@ fn create_key(entry: &Entry) -> Option<String> {
             .unwrap_or(&author.name)
             .to_string()
     });
-
     // Extract the year from the published date
     let year = String::from(&entry.published[..4]);
-
     // Extract the first word of the title that is not in the stop words list
     let title_word = first_non_stop_word(entry);
-
     // Combine the surname, year, and the first non-stop word into a single string
     match (surname, title_word) {
         (Some(surname), Some(word)) => Some(format!(
