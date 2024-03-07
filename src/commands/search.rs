@@ -26,24 +26,6 @@ pub fn search(query: String) -> Result<()> {
     }
 }
 
-pub fn peek() -> Result<()> {
-    let bibliography = bibfile::read_bibliography()?;
-    let mut items = bibfile::parse_bibliography(bibliography);
-    items.reverse();
-    // Sort papers by last_accessed (more recent first)
-    let first_ten: Vec<_> = items.iter().take(10).cloned().collect();
-    let stack = settings::current_stack()?;
-    let action = format!("[{}]", stack.to_uppercase());
-    let color = String::from("Red");
-    match ui::display_list(action, color, first_ten, String::new(), false, false) {
-        Some(action) => match action {
-            ui::Action::Open(paper) => open_pdf(paper),
-            _ => bail!("Action not allowed in immutable search"),
-        },
-        None => Ok(()),
-    }
-}
-
 pub fn list() -> Result<()> {
     //Loading bigliography
     let (width, _) = termion::terminal_size().unwrap();

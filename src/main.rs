@@ -36,8 +36,6 @@ enum Commands {
         #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
         query: String,
     },
-    /// Immutable bliography search
-    Peek,
     /// Print list
     List,
     /// Manage bib stacks
@@ -123,7 +121,6 @@ fn main() {
         Commands::Yank { stack } => commands::stack::yank(stack),
         Commands::Fork { stack } => commands::stack::fork(stack),
         Commands::Search { query } => commands::search::search(query),
-        Commands::Peek => commands::search::peek(),
         Commands::List => commands::search::list(),
         Commands::Export { filename } => commands::export::export(filename),
         Commands::Cleanup => Ok(println!("Cleanup on aisle 3")),

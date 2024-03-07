@@ -69,7 +69,6 @@ Duplicate entries are updated.
 ## Exploration
 
 - `bib search <QUERY>` : Interactive search over all references in stack. Allows for opening and deleting. Papers can be furthered filtered in UI.
-- `bib peek <QUERY>` : Like search but does not allow deleting.
 
 
 ## Export
