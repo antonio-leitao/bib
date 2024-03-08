@@ -68,9 +68,11 @@ Duplicate entries are updated.
 
 ## Exploration
 
+- `bib open <QUERY>` : Select reference to open.
+- `bib status <QUERY>` : Print basic stack statistics.
 - `bib search <QUERY>` : Interactive search over all references in stack. Allows for opening and deleting. Papers can be furthered filtered in UI.
 
 
 ## Export
 
-- `bib search <FILENAME>` : Export references of current stack into a bibfile named `<FILENAME>` defaults to the current directory.
+- `bib export <FILENAME>` : Export references of current stack into a bibfile named `<FILENAME>` defaults to the current directory.

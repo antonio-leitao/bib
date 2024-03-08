@@ -4,3 +4,4 @@ pub mod export;
 pub mod open;
 pub mod search;
 pub mod stack;
+pub mod status;

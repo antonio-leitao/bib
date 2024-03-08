@@ -37,7 +37,7 @@ enum Commands {
         query: String,
     },
     /// Print list
-    List,
+    Status,
     /// Manage bib stacks
     Stack {
         /// Stack name
@@ -121,7 +121,7 @@ fn main() {
         Commands::Yank { stack } => commands::stack::yank(stack),
         Commands::Fork { stack } => commands::stack::fork(stack),
         Commands::Search { query } => commands::search::search(query),
-        Commands::List => commands::search::list(),
+        Commands::Status => commands::status::status(),
         Commands::Export { filename } => commands::export::export(filename),
         Commands::Cleanup => Ok(println!("Cleanup on aisle 3")),
     };

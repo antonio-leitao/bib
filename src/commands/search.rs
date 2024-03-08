@@ -1,9 +1,9 @@
 use crate::base::Paper;
 use crate::commands::cleanup::delete_paper;
 use crate::settings;
-use crate::utils::ui::Item;
+// use crate::utils::ui::Item;
 use crate::utils::{bibfile, ui};
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 fn open_pdf(paper: Paper) -> Result<()> {
     //TODO BRING TO THE TOP OF BIBLIOGRAPHY
@@ -26,21 +26,21 @@ pub fn search(query: String) -> Result<()> {
     }
 }
 
-pub fn list() -> Result<()> {
-    //Loading bigliography
-    let (width, _) = termion::terminal_size().unwrap();
-    let bibliography = bibfile::read_bibliography()?;
-    let mut items = bibfile::parse_bibliography(bibliography);
-    items.reverse();
-    let n_refs = items.len();
-    // Iterate over the first 20 elements or all elements if less than 20
-    let max_entries = 20.min(n_refs);
-    for i in 0..max_entries {
-        println!("{}", items[i].display(width));
-    }
-    // Print a message if there are more than 20 entries not being displayed
-    if n_refs > 20 {
-        println!("\t ----- hiding other {} references -----", n_refs - 20);
-    }
-    Ok(())
-}
+// pub fn list() -> Result<()> {
+//     //Loading bigliography
+//     let (width, _) = termion::terminal_size().unwrap();
+//     let bibliography = bibfile::read_bibliography()?;
+//     let mut items = bibfile::parse_bibliography(bibliography);
+//     items.reverse();
+//     let n_refs = items.len();
+//     // Iterate over the first 20 elements or all elements if less than 20
+//     let max_entries = 20.min(n_refs);
+//     for i in 0..max_entries {
+//         println!("{}", items[i].display(width));
+//     }
+//     // Print a message if there are more than 20 entries not being displayed
+//     if n_refs > 20 {
+//         println!("\t ----- hiding other {} references -----", n_refs - 20);
+//     }
+//     Ok(())
+// }
