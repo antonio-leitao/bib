@@ -68,9 +68,10 @@ Duplicate entries are updated.
 
 ## Exploration
 
+- `bib status` : Print basic stack statistics.
+- `bib list <LENGTH>` : Prints all references in the stack. Optionally choose list size. 
 - `bib open <QUERY>` : Select reference to open.
-- `bib status <QUERY>` : Print basic stack statistics.
-- `bib search <QUERY>` : Interactive search over all references in stack. Allows for opening and deleting. Papers can be furthered filtered in UI.
+- `bib search <QUERY>` : Interactive search over all references in stack. Allows for opening and deleting and moving between stacks. Papers can be furthered filtered in UI. Suitable for in depth organization of stacks.
 
 
 ## Export

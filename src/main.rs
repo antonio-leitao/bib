@@ -36,6 +36,11 @@ enum Commands {
         #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
         query: String,
     },
+    /// Lists the references in the stack
+    List {
+        #[clap(value_name = "LENGTH", short, long)]
+        max: Option<usize>,
+    },
     /// Print list
     Status,
     /// Manage bib stacks
@@ -121,6 +126,7 @@ fn main() {
         Commands::Yank { stack } => commands::stack::yank(stack),
         Commands::Fork { stack } => commands::stack::fork(stack),
         Commands::Search { query } => commands::search::search(query),
+        Commands::List { max } => commands::search::list(max),
         Commands::Status => commands::status::status(),
         Commands::Export { filename } => commands::export::export(filename),
         Commands::Cleanup => Ok(println!("Cleanup on aisle 3")),
