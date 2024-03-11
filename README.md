@@ -1,16 +1,28 @@
-# `bib`
+<p align="center">
+  <img src='assets/logo.svg' width='250px' align="center"></img>
+</p>
 
-<img src='assets/bib_banner.png' width='250px' align="right" style="float:right;margin-left:0pt;margin-top:10pt;"></img>
+<div align="center">
+<h3 max-width='200px' align="center"><code>bib</code></h3>
+  <p><i>Manage your entire bibliography from the command line<br/>
+  Biblatex meets Git<br/>
+  Built with Rust</i><br/></p>
+  <p>
+   <img alt="Static Badge" src="https://img.shields.io/badge/homebrew-black?style=for-the-badge&logo=homebrew&logoColor=white">
+
+  </p>
+</div>
+
+#
 
 `bib` is a command line bibliography manager and explorer. Git meets bib.
-The main power of `bib` is to allow to add notes connected to each reference.
+The main power of `bib` is to allow to create and manage multiple stacks (branches).
 
 #### Contents
   - [Installation](#installation)
   - [Usage](#usage)
     - [Stacks](#stacks)
     - [Managing References](#managing-references)
-    - [Managing Notes](#managing-notes)
     - [Exploration](#exploration)
     - [Export](#export)
     
@@ -21,8 +33,8 @@ brew tap antonio-leitao/taps
 brew install bib
 ```
 # Usage
-`bib` allows for adding and importing bib references, both manually and from the internet.
-It also allows for associating a PDF file and a file with Notes.
+`bib` allows for adding and importing bib references, both manually and automatically from arXiv.
+It also allows for associating a PDF url.
 This is all done inside a powerfull `git`-like branch managing system.
 To get started run:
 
