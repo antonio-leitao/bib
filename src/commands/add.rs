@@ -1,28 +1,23 @@
-use crate::base::Paper;
-use crate::parser;
-use crate::settings;
-use crate::utils::bibfile::{self, parse_entry, read_bibtex};
-use crate::utils::fmt;
-// use crate::utils::ui::Spinner;
-use anyhow::{anyhow, Result};
+use crate::base::{load_papers, save_papers, Paper};
+use crate::embedding::{load_vectors, save_vectors, Point};
+use crate::parser::arxiv::{self, download_arxiv_pdf, download_pdf};
+use crate::stacks::Stack;
+use crate::{blog, utils};
+use anyhow::Result;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
-enum URL {
-    Empty,
-    Arxiv(String),
-}
-
+const EDITOR: &str = "nvim"; //Add this to config
+                             //
 fn prompt_message() -> Result<String> {
     // Create a temporary file
     let temp_file = NamedTempFile::new()?;
     let temp_file_path = temp_file.path().to_owned();
     // Open Vim for user input (you might need to adjust the vim command)
-    Command::new(settings::EDITOR)
-        .arg(temp_file.path())
-        .status()?;
+    Command::new(EDITOR).arg(temp_file.path()).status()?;
     // Read the content of the file
     let mut message = String::new();
     let mut file = fs::File::open(&temp_file_path)?;
@@ -33,44 +28,69 @@ fn prompt_message() -> Result<String> {
     Ok(message)
 }
 
-pub fn add_paper_to_stack(paper: Paper) -> Result<()> {
-    //insert into main bibliography
-    let mut bibliography = bibfile::read_bibliography()?;
-    //MAKE SURE TO ADD IT ON THE TOP!
-    //OR REVERSE BIBLIOGRAPHY WHEN SHOWING
-    bibliography.insert(paper.entry.clone());
-    bibfile::save_bibliography(bibliography)?;
-    //print sucess
-    let into = settings::current_stack()?;
-    fmt::add(into, paper);
-    Ok(())
-}
-
-fn add_bibtex(content: &str) -> Result<()> {
-    // let content = prompt_message()?;
-    let bib = read_bibtex(&content)?;
-    //get only the first entry
-    if let Some(entry) = bib.into_iter().next() {
-        let paper =
-            parse_entry(entry).map_err(|err| anyhow!("Failed to parse bibliography\n{}", err))?;
-        add_paper_to_stack(paper)
-    } else {
-        Err(anyhow!("Empty bibtex"))
-    }
-}
-
-fn read_url(url: String) -> URL {
-    if url.is_empty() {
-        return URL::Empty;
-    }
-    return URL::Arxiv(url);
-}
-
-pub fn add(url: String) -> Result<()> {
-    //currently only implements arxiv links could be expanded
-    let content = match read_url(url) {
-        URL::Empty => prompt_message()?,
-        URL::Arxiv(url) => parser::arxiv::get_bib(&url)?,
+fn build_paper(url: Option<String>) -> Result<Paper> {
+    let bibtex = match url {
+        None => prompt_message()?,
+        Some(url) => arxiv::arxiv2bib(&url)?,
     };
-    add_bibtex(&content)
+    Paper::from_bibtex(&bibtex)
+}
+
+fn is_duplicate(
+    papers: &mut BTreeMap<String, Paper>,
+    paper: &Paper,
+    current_stack: Option<Stack>,
+) -> bool {
+    match papers.get_mut(&paper.id) {
+        None => false,
+        Some(dupe) => {
+            if let Some(stack) = current_stack {
+                if !dupe.stack.contains(&stack) {
+                    dupe.stack.push(stack);
+                }
+            }
+            true
+        }
+    }
+}
+
+pub fn add(url: String, pdf: bool, web: bool) -> Result<()> {
+    let mut paper: Paper;
+    let bytes: Vec<u8>;
+    if pdf {
+        paper = build_paper(None)?;
+        bytes = utils::io::read_and_move_file(&url, &paper.id)?;
+    } else if web {
+        paper = build_paper(None)?;
+        blog!("Downloading", "pdf from url: {}", url);
+        bytes = download_pdf(&url, &paper.id)?;
+    } else {
+        paper = build_paper(Some(url.clone()))?;
+        blog!("Downloading", "pdf from url: {}", &url);
+        bytes = download_arxiv_pdf(&url, &paper.id)?;
+    }
+
+    //check stack conditions
+    let config = utils::io::read_config_file()?;
+    let mut papers = load_papers()?;
+
+    if is_duplicate(&mut papers, &paper, config.current_stack()) {
+        save_papers(&papers)?;
+        return Ok(());
+    } else {
+        if let Some(stack) = config.current_stack() {
+            paper.stack.push(stack)
+        }
+    }
+
+    // Embed the dude
+    let vector = Point::from_bytes(paper.id.clone(), bytes)?;
+    let mut vectors = load_vectors()?;
+    vectors.insert(paper.id.clone(), vector);
+    save_vectors(&vectors)?;
+    //save it i
+    blog!("Saving", "{}", paper.title);
+    papers.insert(paper.id.clone(), paper);
+    save_papers(&papers)?;
+    Ok(())
 }

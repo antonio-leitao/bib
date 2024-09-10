@@ -1,9 +1,12 @@
 extern crate quick_xml;
 use crate::utils::fmt::Clean;
-use anyhow::{bail, Result};
+use crate::utils::io;
+use anyhow::{anyhow, Result};
 use regex::Regex;
 use reqwest::blocking::get;
 use serde::Deserialize;
+use std::fs::File;
+use std::io::Write;
 
 const STOP_WORD: [&str; 34] = [
     "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "if", "in", "into", "is", "it",
@@ -164,23 +167,33 @@ fn generate_biblatex(entry: &Entry, arxiv_id: &str) -> String {
 
     biblatex
 }
-fn arxiv2bib(arxiv_id: &str) -> Result<String> {
+
+pub fn download_pdf(pdf_url: &str, paper_id: &str) -> Result<Vec<u8>> {
+    let response = get(pdf_url)?; // Use blocking `get`
+    let filename = io::pdf_path(paper_id)?;
+    // Use blocking `File::create` and `write_all`
+    let mut file = File::create(&filename)?;
+    let content = response.bytes()?;
+    file.write_all(&content)?;
+
+    Ok(content.to_vec())
+}
+
+pub fn download_arxiv_pdf(link: &str, paper_id: &str) -> Result<Vec<u8>> {
+    let arxiv_id = get_arxiv_id(link).ok_or(anyhow!("Invalid arxiv link"))?;
+    let pdf_url = get_arxiv_pdf_link(arxiv_id);
+    download_pdf(&pdf_url, paper_id)
+}
+
+pub fn arxiv2bib(link: &str) -> Result<String> {
+    let arxiv_id = get_arxiv_id(link).ok_or(anyhow!("Invalid arxiv link"))?;
     let url = format!(
         "http://export.arxiv.org/api/query?id_list={}&max_results=1",
         arxiv_id
     );
-    let response = get(&url)?;
-    let xml = response.text()?;
+    let response = get(&url)?; // Use blocking `get`
+    let xml = response.text()?; // Synchronous `text`
     let feed: Feed = quick_xml::de::from_str(&xml)?;
     let bibtex = generate_biblatex(&feed.entry, arxiv_id);
     Ok(bibtex)
-}
-
-pub fn get_bib(link: &str) -> Result<String> {
-    //Should return maube an option isntead?
-    match get_arxiv_id(link) {
-        Some(arxiv_id) => arxiv2bib(arxiv_id),
-        //maybe change this to option
-        None => bail!("Could not get id"),
-    }
 }

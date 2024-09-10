@@ -1,10 +1,11 @@
+use clap::{Parser, Subcommand};
+use termion::color;
 mod base;
 mod commands;
+mod embedding;
 mod parser;
-mod settings;
+mod stacks;
 mod utils;
-use crate::utils::fmt;
-use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -16,13 +17,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize Bib
-    Init,
     /// Add new reference
     Add {
         /// Initial query for searching
         #[clap(value_name = "URL", default_value_t = String::from(""))]
         url: String,
+        /// Flag to indicate if it's a PDF
+        #[clap(long, short, action, group = "from")]
+        pdf: bool,
+        /// Flag to indicate if it's a PDF
+        #[clap(long, short, action, group = "from")]
+        web: bool,
     },
     /// Open pdf manually
     Open {
@@ -30,8 +35,8 @@ enum Commands {
         #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
         query: String,
     },
-    /// Mutable bibliography search
-    Search {
+    /// Open pdf manually
+    Yank {
         /// Initial query for searching
         #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
         query: String,
@@ -41,98 +46,87 @@ enum Commands {
         #[clap(value_name = "LENGTH", short, long)]
         max: Option<usize>,
     },
-    /// Print list
-    Status,
-    /// Manage bib stacks
-    Stack {
-        /// Stack name
-        #[clap(value_name = "NAME", default_value_t = String::new())]
-        stack: String,
-        /// Delete selected stack
-        #[clap(
-            short,
-            long,
-            requires = "stack",
-            group = "from",
-            default_value_t = false
-        )]
-        delete: bool,
-        /// Rename current stack
-        #[clap(
-            short,
-            long,
-            requires = "stack",
-            group = "from",
-            default_value_t = false
-        )]
-        rename: bool,
-    },
     /// Export bib file
-    Export {
-        /// Specify filename
-        #[clap(value_name = "FILENAME")]
-        filename: Option<String>,
+    Export,
+    /// Unset the current stack
+    Unstack,
+    /// Manage stacks
+    Stack {
+        /// The stack name (optional for certain subcommands)
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
+
+        /// Stack subcommands (new, delete, rename)
+        #[command(subcommand)]
+        action: Option<StackAction>,
     },
-    /// Switch into stack
-    Checkout {
-        /// Target stack name
-        #[clap(value_name = "NAME")]
-        stack: String,
-        /// Create if not exist
-        #[clap(short, long, default_value_t = false)]
-        new: bool,
-    },
-    /// Push references into target stack
-    Yeet {
-        /// Stack to yeet towards
-        #[clap(value_name = "STACK")]
-        stack: String,
-    },
-    /// Pull references from target stack
-    Yank {
-        /// Target branch. Defaults to base.
-        #[clap(value_name = "STACK")]
-        stack: String,
-    },
-    /// Merge current stack with target stack
-    Merge {
-        /// Add new reference along with it
-        #[clap(value_name = "STACK")]
-        stack: String,
-    },
-    /// Fork current stack into a new stack
-    Fork {
-        /// New stack name
-        #[clap(value_name = "NAME")]
-        stack: String,
-    },
-    /// Clean up all notes and references, find pdfs etc
-    Cleanup,
 }
+
+#[derive(Subcommand)]
+enum StackAction {
+    /// Create a new stack
+    New,
+
+    /// Delete the specified stack
+    Delete,
+
+    /// Rename the specified stack
+    Rename {
+        /// The new name for the stack
+        #[arg(value_name = "NEW NAME")]
+        new_name: String,
+    },
+    /// Creates new stack with the same papers
+    Fork {
+        /// The new name for the stack
+        #[arg(value_name = "NEW STACK")]
+        new_stack: String,
+    },
+    /// Creates new stack with the same papers
+    Merge {
+        /// The new name for the stack
+        #[arg(value_name = "TARGET")]
+        target: String,
+    },
+}
+
 fn main() {
     let cli = Cli::parse();
     let result = match cli.command {
-        Commands::Init => commands::stack::init(),
-        Commands::Stack {
-            stack,
-            delete,
-            rename,
-        } => commands::stack::stack(stack, delete, rename),
-        Commands::Checkout { stack, new } => commands::stack::checkout(stack, new),
-        Commands::Add { url } => commands::add::add(url),
-        Commands::Open { query } => commands::open::open(query),
-        Commands::Merge { stack } => commands::stack::merge(stack),
-        Commands::Yeet { stack } => commands::stack::yeet(stack),
-        Commands::Yank { stack } => commands::stack::yank(stack),
-        Commands::Fork { stack } => commands::stack::fork(stack),
-        Commands::Search { query } => commands::search::search(query),
-        Commands::List { max } => commands::search::list(max),
-        Commands::Status => commands::status::status(),
-        Commands::Export { filename } => commands::export::export(filename),
-        Commands::Cleanup => Ok(println!("Cleanup on aisle 3")),
+        Commands::Stack { name, action } => match (name, action) {
+            (None, None) => commands::stack::list(),
+            (Some(stack), None) => commands::stack::switch(stack),
+            (Some(stack), Some(StackAction::New)) => commands::stack::new(stack),
+            (Some(stack), Some(StackAction::Delete)) => Ok(commands::stack::delete(stack)),
+            (Some(stack), Some(StackAction::Rename { new_name })) => {
+                Ok(commands::stack::rename(stack, new_name))
+            }
+            (Some(stack), Some(StackAction::Fork { new_stack })) => {
+                Ok(commands::stack::fork(stack, new_stack))
+            }
+            (Some(stack), Some(StackAction::Merge { target })) => {
+                Ok(commands::stack::merge(target, stack))
+            }
+            _ => Ok(println!("Invalid stack usage")),
+        },
+        Commands::Unstack => commands::stack::unstack(),
+        Commands::Add { url, pdf, web } => commands::add::add(url, pdf, web),
+        Commands::Open { query } => commands::prompt::open(query),
+        Commands::Yank { query } => Ok(commands::prompt::yank(query)),
+        Commands::List { max } => commands::prompt::list(max),
+        Commands::Export => Ok(commands::export::export()),
     };
     match result {
         Ok(()) => (),
-        Err(err) => fmt::erro(err.to_string()),
+        Err(err) => erro(err.to_string()),
     }
+}
+
+fn erro(err: String) {
+    println!(
+        "{}error{}: {}",
+        color::Fg(color::Red),
+        color::Fg(color::Reset),
+        err
+    );
 }
