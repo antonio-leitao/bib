@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -55,11 +55,11 @@ impl Stack {
             bail!("Name reserved for base stack")
         }
         //check if its already taken
-        stacks.iter().for_each(|s| {
-            if s.name == new_stack_name {
-                anyhow!("Stack {} already exists", new_stack_name);
+        for stack in stacks.iter() {
+            if stack.name == new_stack_name {
+                bail!("Stack {} already exists", new_stack_name);
             };
-        });
+        }
         // Count the usage of each color
         let mut color_usage = HashMap::new();
         for color in &COLORS {

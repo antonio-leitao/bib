@@ -39,15 +39,7 @@ impl Paper {
         length -= self.get_slack();
         fit_string_to_length(&self.title, length)
     }
-}
-
-pub trait Item {
-    fn display(&self, max_width: u16) -> String;
-    fn disabled(&self, max_width: u16) -> String;
-}
-
-impl Item for Paper {
-    fn display(&self, max_width: u16) -> String {
+    pub fn display(&self, max_width: u16) -> String {
         // let slack = self.get_slack();
         let mut display_string = format!(
             "{} {}|{} {} {}|{} {}",
@@ -64,17 +56,6 @@ impl Item for Paper {
             display_string.push_str(&format!(" {}", stack));
         }
         display_string
-    }
-
-    fn disabled(&self, max_width: u16) -> String {
-        // let slack = self.get_slack();
-        let disabled_string = format!(
-            "{}{}{}",
-            color::Fg(color::Rgb(83, 110, 122)),
-            self.display(max_width),
-            color::Fg(color::Reset),
-        );
-        disabled_string
     }
 }
 

@@ -1,9 +1,7 @@
 use crate::base::Paper;
 use crate::utils::fmt::Clean;
-//use crate::{stacks, utils};
 use anyhow::{anyhow, Result};
 use biblatex::{Bibliography, Entry, Person};
-use regex::Regex;
 
 fn parse_year(entry: &Entry) -> Result<i64> {
     entry
@@ -33,17 +31,17 @@ fn format_authors(authors: Vec<Person>) -> String {
     formatted_authors
 }
 
-fn remove_non_alphabetic(input: &str) -> String {
-    let re = Regex::new(r"[^a-zA-Z ]").unwrap();
-    re.replace_all(input, "").to_string()
-}
-
-fn parse_url(entry: &Entry) -> Option<String> {
-    match entry.get_as::<String>("url") {
-        Ok(val) => Some(val),
-        Err(_) => None,
-    }
-}
+//fn remove_non_alphabetic(input: &str) -> String {
+//    let re = Regex::new(r"[^a-zA-Z ]").unwrap();
+//    re.replace_all(input, "").to_string()
+//}
+//
+//fn parse_url(entry: &Entry) -> Option<String> {
+//    match entry.get_as::<String>("url") {
+//        Ok(val) => Some(val),
+//        Err(_) => None,
+//    }
+//}
 
 fn extract_entry(bibtex_str: &str) -> Result<Entry> {
     // Parse the bibliography (this will handle multiple entries, but we'll take the first one)
@@ -73,26 +71,3 @@ impl Paper {
         })
     }
 }
-
-// ALL GOOD untill here
-
-//pub fn load_bibliography_and_stack() -> Result<(Bibliography, Vec<Paper>)> {
-//    let stack_name = utils::io::current_stack()?;
-//    let bibliography = load_bibliography()?;
-//    let papers = match stack_name == "all" {
-//        true => bibliography
-//            .iter()
-//            .filter_map(|entry| parse_entry(entry).ok())
-//            .collect(),
-//        false => {
-//            let stack_manager = stacks::load_stack_manager()?;
-//            let paper_ids = stack_manager.get(stack_name)?;
-//            paper_ids
-//                .iter()
-//                .filter_map(|id| bibliography.get(id))
-//                .filter_map(|entry| parse_entry(entry).ok())
-//                .collect()
-//        }
-//    };
-//    Ok((bibliography, papers))
-//}

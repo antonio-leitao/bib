@@ -112,9 +112,9 @@ fn main() {
         Commands::Unstack => commands::stack::unstack(),
         Commands::Add { url, pdf, web } => commands::add::add(url, pdf, web),
         Commands::Open { query } => commands::prompt::open(query),
-        Commands::Yank { query } => Ok(commands::prompt::yank(query)),
+        Commands::Yank { query } => commands::prompt::yank(query),
         Commands::List { max } => commands::prompt::list(max),
-        Commands::Export => Ok(commands::export::export()),
+        Commands::Export => commands::export::export(),
     };
     match result {
         Ok(()) => (),

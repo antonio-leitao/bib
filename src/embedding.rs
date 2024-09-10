@@ -1,11 +1,13 @@
-use crate::base::Paper;
-use anyhow::{bail, Context, Result};
+use crate::utils::io::model_dir;
+use crate::{blog, utils};
+use anyhow::{bail, Result};
 use bincode::{deserialize, serialize};
 use dotzilla;
 use fastembed::{
     read_file_to_bytes, InitOptionsUserDefined, Pooling, QuantizationMode, TextEmbedding,
     TokenizerFiles, UserDefinedEmbeddingModel,
 };
+use gag::Gag;
 use hf_hub::api::sync::ApiBuilder;
 use hf_hub::Cache;
 use serde::{Deserialize, Serialize};
@@ -14,12 +16,6 @@ use std::collections::BTreeMap;
 use std::collections::BinaryHeap;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-
-use crate::{blog, utils};
-use gag::Gag;
-
-const CACHE_DIR: &str = ".jina_cache";
 
 #[derive(Serialize, Deserialize)]
 pub struct Point {
@@ -50,14 +46,8 @@ fn extract_text_from_pdf(bytes: Vec<u8>) -> Result<String> {
         .collect())
 }
 
-fn ensure_cache_dir() -> Result<PathBuf> {
-    let cache_dir = Path::new(CACHE_DIR);
-    std::fs::create_dir_all(cache_dir).context("Failed to create cache directory")?;
-    Ok(cache_dir.to_path_buf())
-}
-
 fn load_model() -> Result<UserDefinedEmbeddingModel> {
-    let cache_dir = ensure_cache_dir()?;
+    let cache_dir = model_dir()?;
 
     let cache = Cache::new(cache_dir);
     let api = ApiBuilder::from_cache(cache)

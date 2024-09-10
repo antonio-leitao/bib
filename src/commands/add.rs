@@ -5,27 +5,32 @@ use crate::stacks::Stack;
 use crate::{blog, utils};
 use anyhow::Result;
 use std::collections::BTreeMap;
-use std::fs;
-use std::io::Read;
-use std::process::Command;
-use tempfile::NamedTempFile;
+use std::process::{Command, Stdio};
 
-const EDITOR: &str = "nvim"; //Add this to config
-                             //
 fn prompt_message() -> Result<String> {
-    // Create a temporary file
-    let temp_file = NamedTempFile::new()?;
-    let temp_file_path = temp_file.path().to_owned();
-    // Open Vim for user input (you might need to adjust the vim command)
-    Command::new(EDITOR).arg(temp_file.path()).status()?;
-    // Read the content of the file
-    let mut message = String::new();
-    let mut file = fs::File::open(&temp_file_path)?;
-    file.read_to_string(&mut message)?;
-    // Delete the temporary file
-    temp_file.close()?;
-    // Return the message
-    Ok(message)
+    // Define the command and arguments
+    let output = Command::new("gum")
+        .arg("write")
+        .arg("--width")
+        .arg("80")
+        .arg("--height")
+        .arg("24")
+        .arg("--base.margin")
+        .arg("1 1")
+        .arg("--cursor.foreground")
+        .arg("31")
+        .arg("--char-limit")
+        .arg("0")
+        .arg("--placeholder")
+        .arg("Paste the bibtex.")
+        .stdout(Stdio::piped()) // Capture stdout
+        .spawn()? // Spawn the process
+        .wait_with_output()?; // Wait for the process to finish and capture output
+
+    // Convert the output to a String
+    let result = String::from_utf8_lossy(&output.stdout);
+
+    Ok(result.to_string())
 }
 
 fn build_paper(url: Option<String>) -> Result<Paper> {

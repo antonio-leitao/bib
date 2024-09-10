@@ -65,28 +65,6 @@ pub fn save_config_file(config: &Config) -> Result<()> {
     Ok(())
 }
 
-pub fn current_stack() -> Result<String> {
-    let config = read_config_file()?;
-    Ok(config.stack)
-}
-
-pub fn list_stacks() -> Result<Vec<Stack>> {
-    let config = read_config_file()?;
-    Ok(config.stacks)
-}
-
-pub fn stack_path(stack_name: &str) -> Result<PathBuf> {
-    // Expand the tilde to the user's home directory
-    let base_dir = tilde("~/.paperstack/stacks").to_string();
-    let mut stacks_path = PathBuf::from(&base_dir);
-    // Make sure the directories exist
-    fs::create_dir_all(&stacks_path)?;
-    // Append the PDF file name to the path
-    stacks_path.push(format!("{}.pdf", stack_name));
-    // Return the full path as a PathBuf
-    Ok(stacks_path)
-}
-
 pub fn pdf_path(pdf_name: &str) -> Result<PathBuf> {
     // Expand the tilde to the user's home directory
     let base_dir = tilde("~/.paperstack/pdfs").to_string();
@@ -134,19 +112,6 @@ pub fn read_and_move_file(path: &str, paper_id: &str) -> Result<Vec<u8>> {
     // Return the contents
     Ok(contents)
 }
-
-//pub async fn rename_pdf_file(file_path: PathBuf, new_name: &str) -> Result<PathBuf> {
-//    // Get the parent directory of the file
-//    let parent_dir = match file_path.parent() {
-//        Some(dir) => dir,
-//        None => bail!("Trouble renaming the pdf"),
-//    };
-//    // Construct the new file path with the new name
-//    let new_file_path = parent_dir.join(format!("{}.pdf", new_name));
-//    // Rename the file
-//    rename(&file_path, &new_file_path).await?;
-//    Ok(new_file_path)
-//}
 
 pub fn model_dir() -> Result<PathBuf> {
     // Expand the tilde to the user's home directory

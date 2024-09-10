@@ -1,11 +1,13 @@
-use crate::base::{Item, Paper};
+use crate::base::Paper;
+use crate::blog;
 use crate::embedding::Point;
 use crate::{
     base::load_papers,
     embedding::{encode, k_nearest, load_vectors},
     utils::io::read_config_file,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use copypasta::{ClipboardContext, ClipboardProvider};
 use std::cmp;
 use std::collections::BTreeMap;
 use std::io::{self, Stdout, Write};
@@ -126,10 +128,10 @@ pub fn list(max: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-pub fn open(query: String) -> Result<()> {
+fn select(query: String) -> Result<Option<Paper>> {
     let papers = load_papers()?;
     let points = load_vectors()?;
-    let (width, height) = termion::terminal_size()?;
+    let (_width, height) = termion::terminal_size()?;
     let mut indicies = filter_by_stack(&papers)?;
     if query.len() > 0 {
         indicies = filter_by_query(query, &points, &indicies, height as usize - 10)?;
@@ -138,12 +140,31 @@ pub fn open(query: String) -> Result<()> {
         .iter()
         .filter_map(|key| papers.get(key).cloned())
         .collect();
-    match prompt_select(&items)? {
-        Some(index) => println!("{}", items[index].display(width)),
+    let paper = match prompt_select(&items)? {
+        Some(index) => Some(items[index].clone()),
+        None => None,
+    };
+    Ok(paper)
+}
+
+pub fn open(query: String) -> Result<()> {
+    match select(query)? {
+        Some(paper) => paper.open_pdf()?,
         None => (),
     };
     Ok(())
 }
-pub fn yank(query: String) {
-    println!("Copying bibfile with query: {:?}", query)
+
+pub fn yank(query: String) -> Result<()> {
+    match select(query)? {
+        Some(paper) => {
+            let mut ctx = ClipboardContext::new()
+                .map_err(|e| anyhow!("Failed to create clipboard context: {}", e))?;
+            ctx.set_contents(paper.bibtex.clone())
+                .map_err(|e| anyhow!("Failed to set clipboard contents: {}", e))?;
+            blog!("Copied", "bibtex to clipboard")
+        }
+        None => (),
+    };
+    Ok(())
 }
