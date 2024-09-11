@@ -4,7 +4,7 @@ use crate::parser::arxiv::{self, download_arxiv_pdf, download_pdf};
 use crate::stacks::Stack;
 use crate::{blog, utils};
 use anyhow::Result;
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 use std::process::{Command, Stdio};
 
 fn prompt_message() -> Result<String> {
@@ -42,7 +42,7 @@ fn build_paper(url: Option<String>) -> Result<Paper> {
 }
 
 fn is_duplicate(
-    papers: &mut BTreeMap<String, Paper>,
+    papers: &mut IndexMap<String, Paper>,
     paper: &Paper,
     current_stack: Option<Stack>,
 ) -> bool {
@@ -95,7 +95,7 @@ pub fn add(url: String, pdf: bool, web: bool) -> Result<()> {
     save_vectors(&vectors)?;
     //save it i
     blog!("Saving", "{}", paper.title);
-    papers.insert(paper.id.clone(), paper);
+    papers.shift_insert(0, paper.id.clone(), paper);
     save_papers(&papers)?;
     Ok(())
 }

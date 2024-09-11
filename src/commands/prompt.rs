@@ -1,6 +1,7 @@
-use crate::base::Paper;
+use crate::base::{save_papers, Paper};
 use crate::blog;
 use crate::embedding::Point;
+use crate::stacks::Stack;
 use crate::{
     base::load_papers,
     embedding::{encode, k_nearest, load_vectors},
@@ -8,6 +9,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use copypasta::{ClipboardContext, ClipboardProvider};
+use indexmap::IndexMap;
 use std::cmp;
 use std::collections::BTreeMap;
 use std::io::{self, Stdout, Write};
@@ -15,7 +17,13 @@ use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
 
-fn filter_by_stack(papers: &BTreeMap<String, Paper>) -> Result<Vec<String>> {
+fn pull_up(map: &mut IndexMap<String, Paper>, key: &str) {
+    if let Some(removed_paper) = map.shift_remove(key) {
+        map.shift_insert(0, key.to_string(), removed_paper);
+    }
+}
+
+fn filter_by_stack(papers: &IndexMap<String, Paper>) -> Result<Vec<String>> {
     let config = read_config_file()?;
     let indicies: Vec<String> = match config.current_stack() {
         Some(current) => papers
@@ -103,7 +111,6 @@ pub fn list(max: Option<usize>) -> Result<()> {
     let papers = load_papers()?;
     let n_refs = papers.len();
     let indicies = filter_by_stack(&papers)?;
-
     // Determine the maximum number of entries to display
     let max_entries = match max {
         Some(m) => cmp::min(m, n_refs),
@@ -114,7 +121,6 @@ pub fn list(max: Option<usize>) -> Result<()> {
     indicies
         .iter()
         .filter_map(|key| papers.get(key).cloned())
-        .rev()
         .take(max_entries)
         .for_each(|paper| println!("{}", paper.display(width)));
 
@@ -128,11 +134,10 @@ pub fn list(max: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-fn select(query: String) -> Result<Option<Paper>> {
-    let papers = load_papers()?;
+fn select(query: String, papers: &IndexMap<String, Paper>) -> Result<Option<Paper>> {
     let points = load_vectors()?;
     let (_width, height) = termion::terminal_size()?;
-    let mut indicies = filter_by_stack(&papers)?;
+    let mut indicies = filter_by_stack(papers)?;
     if query.len() > 0 {
         indicies = filter_by_query(query, &points, &indicies, height as usize - 10)?;
     };
@@ -148,23 +153,76 @@ fn select(query: String) -> Result<Option<Paper>> {
 }
 
 pub fn open(query: String) -> Result<()> {
-    match select(query)? {
-        Some(paper) => paper.open_pdf()?,
+    let mut papers = load_papers()?;
+    match select(query, &papers)? {
+        Some(paper) => {
+            paper.open_pdf()?;
+            pull_up(&mut papers, &paper.id);
+            save_papers(&papers)?;
+        }
         None => (),
     };
     Ok(())
 }
 
 pub fn yank(query: String) -> Result<()> {
-    match select(query)? {
+    let mut papers = load_papers()?;
+    match select(query, &papers)? {
         Some(paper) => {
             let mut ctx = ClipboardContext::new()
                 .map_err(|e| anyhow!("Failed to create clipboard context: {}", e))?;
             ctx.set_contents(paper.bibtex.clone())
                 .map_err(|e| anyhow!("Failed to set clipboard contents: {}", e))?;
+            pull_up(&mut papers, &paper.id);
+            save_papers(&papers)?;
             blog!("Copied", "bibtex to clipboard")
         }
         None => (),
     };
     Ok(())
+}
+
+fn toggle_paper_stack(paper: &mut Paper, new_stack: &Stack) {
+    let stack_index = paper.stack.iter().position(|s| s.name == new_stack.name);
+    match stack_index {
+        Some(index) => {
+            // Stack exists, so remove it
+            paper.stack.remove(index);
+        }
+        None => {
+            // Stack doesn't exist, so add it
+            paper.stack.push(new_stack.clone());
+        }
+    }
+}
+
+pub fn toggle(stack: String, query: String) -> Result<()> {
+    let config = read_config_file()?;
+    let stack = config
+        .stacks
+        .iter()
+        .find(|&s| s.name == stack)
+        .ok_or(anyhow!("Stack {} does not exist", stack))?;
+    let mut papers = load_papers()?;
+    let points = load_vectors()?;
+    let (_width, height) = termion::terminal_size()?;
+    let mut indicies = filter_by_stack(&papers)?;
+    if query.len() > 0 {
+        indicies = filter_by_query(query, &points, &indicies, height as usize - 10)?;
+    };
+    let items: Vec<Paper> = indicies
+        .iter()
+        .filter_map(|key| papers.get(key).cloned())
+        .collect();
+    match prompt_select(&items)? {
+        Some(index) => {
+            let key = items[index].id.clone();
+            let paper = papers.get_mut(&key).unwrap(); //this is totally safe
+            toggle_paper_stack(paper, stack);
+            pull_up(&mut papers, &key);
+            save_papers(&papers)?;
+            Ok(())
+        }
+        None => Ok(()),
+    }
 }

@@ -16,6 +16,7 @@
 #
 
 `bib` is a command line bibliography manager and explorer. Git meets bib.
+Each reference is embedding using an LLM and you can query your entire library using natural language.
 The main power of `bib` is to allow to create and manage multiple stacks (branches).
 
 #### Contents
@@ -34,58 +35,40 @@ brew install bib
 ```
 # Usage
 `bib` allows for adding and importing bib references, both manually and automatically from arXiv.
-It also allows for associating a PDF url.
-This is all done inside a powerfull `git`-like branch managing system.
-To get started run:
 
-```text
-bib init
-```
 
 ## Stacks
 `git` has branches, `bib` has stacks.
 This allows you to create separated stacks of references (`base`, `to_read` etc.) and manage them separately.
 The api is done as to mimic `git` as close as possible
 
-#### Managing Stacks
-
 - `bib stack` : Lists all stacks including active one. 
-- `bib stack <NAME>` : Creates new empty stack named `NAME`.
-- `bib stack --delete <STACK>` : Deletes target stacked named `STACK`, cannot delete active one.
-- `bib stack --rename <NAME>` : Renames active stack to `NAME`. 
+- `bib stack <NAME>` : Switches to stack named `NAME`.
+- `bib stack <NAME> new` : Creates new empty stack named `NAME`.
+- `bib stack <NAME> drop` : Deletes the stack named `NAME`.
+- `bib stack <NAME> toggle [QUERY]` : Toggles selected paper in/out of stack `NAME`.
+- `bib stack <NAME> rename <NEW NAME>` : Renames stack `NAME` to `NEW NAME`.
+- `bib stack <NAME> fork <FROM>` : Creates a new stack `NAME` with all papers from `FROM`.
+- `bib stack <NAME> merge <FROM>` : Adds all papers of `FROM` into stack `NAME`.
+- `bib unstack` : Work with all references at the same time.
 
-#### Switching stacks
 
-- `bib checkout <STACK>` : Switches to target stack.
-- `bib checkout --new <STACK>` : Creates new stack `NEW_STACK` and switches to it.
+## Adding references
+References are always added to the current stack.
+Unstack before adding if you dont want to assign them to that stack.
+Or toggle the stack from the reference later.
 
-#### Merging
-
-Merging is always a non-simmetric operation.
-A merge/pull/push of stack A into B means to add all references that exist in A into B.
-Duplicate entries are updated.
-
-- `bib yank <STACK>` : Pulls from target stack **Target stack is not deleted**. 
-- `bib yeet <STACK>` : Pushes current stack into target stack. Current stack is **not** deleted.
-- `bib merge <STACK>` : Pulls target stack into current stack. **Target stack is deleted**.
-> [!CAUTION]
-> Merge is a yank that deletes the target.
-- `bib fork <NEW_STACK>` : Duplicates active stack under new name, switches to new stack.
-
-## Managing references
-
-- `bib add` : Prompts user to manually add a bibtex reference. Optionally a `url` to allow `bib` to open/download the pdf.
 - `bib add <ARXIV URL>` : Automatically adds reference given an arxiv url. This will be extended to included other sources.
+- `bib add --pdf <PATH>` :Adds paper given a local pdf path. Prompts user to manually add a bibtex reference. 
+- `bib add --web <URL>` :Adds paper given an online pdf url. Prompts user to manually add a bibtex reference. 
 
 
 ## Exploration
 
-- `bib status` : Print basic stack statistics.
 - `bib list <LENGTH>` : Prints all references in the stack. Optionally choose list size. 
 - `bib open <QUERY>` : Select reference to open.
-- `bib search <QUERY>` : Interactive search over all references in stack. Allows for opening and deleting and moving between stacks. Papers can be furthered filtered in UI. Suitable for in depth organization of stacks.
-
 
 ## Export
 
-- `bib export <FILENAME>` : Export references of current stack into a bibfile named `<FILENAME>` defaults to the current directory.
+- `bib yank <QUERY>` : Copies bibtex of selected reference to clipboard. 
+- `bib export <FILENAME>` : Export bibfile to standard output of all references or selected stack.

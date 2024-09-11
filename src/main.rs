@@ -68,7 +68,14 @@ enum StackAction {
     New,
 
     /// Delete the specified stack
-    Delete,
+    Drop,
+
+    /// Toggle paper to/from stack
+    Toggle {
+        /// Initial query for searching
+        #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
+        query: String,
+    },
 
     /// Rename the specified stack
     Rename {
@@ -82,9 +89,9 @@ enum StackAction {
         #[arg(value_name = "NEW STACK")]
         new_stack: String,
     },
-    /// Creates new stack with the same papers
+    /// Brings all items into stack
     Merge {
-        /// The new name for the stack
+        /// The target stack
         #[arg(value_name = "TARGET")]
         target: String,
     },
@@ -97,15 +104,18 @@ fn main() {
             (None, None) => commands::stack::list(),
             (Some(stack), None) => commands::stack::switch(stack),
             (Some(stack), Some(StackAction::New)) => commands::stack::new(stack),
-            (Some(stack), Some(StackAction::Delete)) => Ok(commands::stack::delete(stack)),
+            (Some(stack), Some(StackAction::Drop)) => commands::stack::drop(stack),
             (Some(stack), Some(StackAction::Rename { new_name })) => {
-                Ok(commands::stack::rename(stack, new_name))
+                commands::stack::rename(stack, new_name)
             }
             (Some(stack), Some(StackAction::Fork { new_stack })) => {
-                Ok(commands::stack::fork(stack, new_stack))
+                commands::stack::fork(stack, new_stack)
             }
             (Some(stack), Some(StackAction::Merge { target })) => {
-                Ok(commands::stack::merge(target, stack))
+                commands::stack::merge(target, stack)
+            }
+            (Some(stack), Some(StackAction::Toggle { query })) => {
+                commands::prompt::toggle(stack, query)
             }
             _ => Ok(println!("Invalid stack usage")),
         },

@@ -12,8 +12,7 @@ use hf_hub::api::sync::ApiBuilder;
 use hf_hub::Cache;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
-use std::collections::BinaryHeap;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::fs::File;
 use std::io::{Read, Write};
 

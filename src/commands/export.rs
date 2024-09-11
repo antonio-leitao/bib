@@ -1,10 +1,10 @@
 use crate::base::{load_papers, Paper};
 use crate::utils::io::read_config_file;
 use anyhow::Result;
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 use std::io::{self, Write};
 
-fn filter_by_stack(papers: &BTreeMap<String, Paper>) -> Result<Vec<String>> {
+fn filter_by_stack(papers: &IndexMap<String, Paper>) -> Result<Vec<String>> {
     let config = read_config_file()?;
     let indicies: Vec<String> = match config.current_stack() {
         Some(current) => papers

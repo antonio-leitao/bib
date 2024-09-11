@@ -26,3 +26,4 @@ pdf-extract = "0.7.9"
 gag = "1.0.0"
 dotzilla = "0.1.0"
 copypasta = "0.10.1"
+indexmap = { version = "2.5.0", features = ["serde"] }

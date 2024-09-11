@@ -2,9 +2,9 @@ use crate::stacks::Stack;
 use crate::utils;
 use anyhow::{anyhow, Result};
 use bincode;
+use indexmap::IndexMap;
 use open;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{Read, Write};
 use termion::color;
@@ -24,9 +24,6 @@ impl Paper {
         let pdf_path = utils::io::pdf_path(&self.id)?;
         open::that(pdf_path).map_err(|err| anyhow!("Could not open pdf: {}", err))
     }
-}
-
-impl Paper {
     fn get_slack(&self) -> usize {
         self.stack
             .iter()
@@ -70,7 +67,7 @@ fn fit_string_to_length(input: &str, max_length: usize) -> String {
     result
 }
 
-pub fn save_papers(papers: &BTreeMap<String, Paper>) -> Result<()> {
+pub fn save_papers(papers: &IndexMap<String, Paper>) -> Result<()> {
     let encoded: Vec<u8> = bincode::serialize(papers)?;
     let filename = utils::io::papers_path()?;
     let mut file = File::create(filename)?;
@@ -78,14 +75,14 @@ pub fn save_papers(papers: &BTreeMap<String, Paper>) -> Result<()> {
     Ok(())
 }
 
-pub fn load_papers() -> Result<BTreeMap<String, Paper>> {
+pub fn load_papers() -> Result<IndexMap<String, Paper>> {
     let filename = utils::io::papers_path()?;
     if !filename.exists() {
-        return Ok(BTreeMap::new());
+        return Ok(IndexMap::new());
     }
     let mut file = File::open(filename)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
-    let decoded: BTreeMap<String, Paper> = bincode::deserialize(&buffer)?;
+    let decoded: IndexMap<String, Paper> = bincode::deserialize(&buffer)?;
     Ok(decoded)
 }
