@@ -31,7 +31,7 @@ impl Config {
 
 pub fn read_config_file() -> Result<Config> {
     // Base directory
-    let base_dir = tilde("~/.paperstack").to_string();
+    let base_dir = tilde("~/.bib").to_string();
     let mut config_path = PathBuf::from(&base_dir);
     // Make sure the directories exist
     fs::create_dir_all(&config_path)?;
@@ -56,7 +56,7 @@ pub fn save_config_file(config: &Config) -> Result<()> {
     // Serialize the Config struct to TOML
     let toml_content = toml::to_string_pretty(config)?;
     // Create the directory if it doesn't exist
-    let dir = tilde("~/.paperstack").to_string();
+    let dir = tilde("~/.bib").to_string();
     fs::create_dir_all(&dir)?;
     // Create and write to the config.toml file
     let file_path = dir + "/config.toml";
@@ -67,7 +67,7 @@ pub fn save_config_file(config: &Config) -> Result<()> {
 
 pub fn pdf_path(pdf_name: &str) -> Result<PathBuf> {
     // Expand the tilde to the user's home directory
-    let base_dir = tilde("~/.paperstack/pdfs").to_string();
+    let base_dir = tilde("~/.bib/pdfs").to_string();
     let mut pdfs_path = PathBuf::from(&base_dir);
     // Make sure the directories exist
     fs::create_dir_all(&pdfs_path)?;
@@ -78,7 +78,7 @@ pub fn pdf_path(pdf_name: &str) -> Result<PathBuf> {
 }
 pub fn vectors_path() -> Result<PathBuf> {
     // Expand the tilde to the user's home directory
-    let base_dir = tilde("~/.paperstack").to_string();
+    let base_dir = tilde("~/.bib").to_string();
     let mut bib_path = PathBuf::from(&base_dir);
     // Make sure the directories exist
     fs::create_dir_all(&bib_path)?;
@@ -90,7 +90,7 @@ pub fn vectors_path() -> Result<PathBuf> {
 
 pub fn papers_path() -> Result<PathBuf> {
     // Expand the tilde to the user's home directory
-    let base_dir = tilde("~/.paperstack").to_string();
+    let base_dir = tilde("~/.bib").to_string();
     let mut bib_path = PathBuf::from(&base_dir);
     // Make sure the directories exist
     fs::create_dir_all(&bib_path)?;
@@ -115,7 +115,7 @@ pub fn read_and_move_file(path: &str, paper_id: &str) -> Result<Vec<u8>> {
 
 pub fn model_dir() -> Result<PathBuf> {
     // Expand the tilde to the user's home directory
-    let base_dir = tilde("~/.paperstack/llm").to_string();
+    let base_dir = tilde("~/.bib/llm").to_string();
     let pdfs_path = PathBuf::from(&base_dir);
     // Make sure the directories exist
     fs::create_dir_all(&pdfs_path)?;

@@ -35,7 +35,7 @@ enum Commands {
         #[clap(value_name = "PROMPT", default_value_t = String::from(""))]
         query: String,
     },
-    /// Open pdf manually
+    /// Copy bibtex to clipboard
     Yank {
         /// Initial query for searching
         #[clap(value_name = "PROMPT", default_value_t = String::from(""))]

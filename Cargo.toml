@@ -2,6 +2,11 @@
 name = "bib"
 version = "0.3.0"
 edition = "2021"
+authors = ["António Leitão"]
+description = "LLM empowered bibliography management."
+repository = "https://github.com/antonio-leitao/bib"
+license = "Apache-2.0"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,10 +21,8 @@ reqwest = { version = "0.11.22", features = ["blocking", "json"] }
 shellexpand = "3.1.0"
 bincode = "1.3.3"
 toml = "0.8.8"
-tempfile = "3.8.1"
 open = "5.0.0"
 quick-xml = { version = "0.31.0", features = ["serde", "serialize", "overlapped-lists"] }
-colored = "2.1.0"
 fastembed = "4.0.0"
 hf-hub = "0.3.2"
 pdf-extract = "0.7.9"

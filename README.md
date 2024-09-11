@@ -28,6 +28,10 @@ The main power of `bib` is to allow to create and manage multiple stacks (branch
     - [Export](#export)
     
 # Installation
+
+> [!NOTE]
+> BIB requires [`gum`](https://github.com/charmbracelet/gum) to be installed and available on your `PATH`.
+
 ```bash
 # macOS or Linux
 brew tap antonio-leitao/taps
