@@ -1,15 +1,7 @@
-use crate::utils::io::model_dir;
-use crate::{blog, utils};
-use anyhow::{bail, Result};
+use crate::utils;
+use anyhow::Result;
 use bincode::{deserialize, serialize};
 use dotzilla;
-use fastembed::{
-    read_file_to_bytes, InitOptionsUserDefined, Pooling, QuantizationMode, TextEmbedding,
-    TokenizerFiles, UserDefinedEmbeddingModel,
-};
-use gag::Gag;
-use hf_hub::api::sync::ApiBuilder;
-use hf_hub::Cache;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BinaryHeap};
@@ -23,53 +15,12 @@ pub struct Point {
 }
 
 impl Point {
-    pub fn from_bytes(id: String, bytes: Vec<u8>) -> Result<Self> {
-        //let text = extract_ascii_only(bytes)?;
-        blog!("Extracting", "text from pdf");
-        let text: String;
-        {
-            let _print_gag = Gag::stdout().unwrap();
-            text = extract_text_from_pdf(bytes)?;
+    pub fn new(id: String, embedding: Vec<f32>) -> Self {
+        Point {
+            id,
+            coords: embedding,
         }
-        blog!("Embedding", "using JINA-v2-small-8k");
-        let coords = encode(&text)?;
-        Ok(Point { id, coords })
     }
-}
-
-fn extract_text_from_pdf(bytes: Vec<u8>) -> Result<String> {
-    let text = pdf_extract::extract_text_from_mem(&bytes)?;
-    Ok(text
-        .chars()
-        .filter(|&c| c.is_ascii() && !c.is_control())
-        .collect())
-}
-
-fn load_model() -> Result<UserDefinedEmbeddingModel> {
-    let cache_dir = model_dir()?;
-
-    let cache = Cache::new(cache_dir);
-    let api = ApiBuilder::from_cache(cache)
-        .with_progress(true)
-        .build()
-        .unwrap();
-
-    let repo = api.model("jinaai/jina-embeddings-v2-small-en".to_string());
-
-    let tokenizer_files: TokenizerFiles = TokenizerFiles {
-        tokenizer_file: read_file_to_bytes(&repo.get("tokenizer.json")?)?,
-        config_file: read_file_to_bytes(&repo.get("config.json")?)?,
-        special_tokens_map_file: read_file_to_bytes(&repo.get("special_tokens_map.json")?)?,
-        tokenizer_config_file: read_file_to_bytes(&repo.get("tokenizer_config.json")?)?,
-    };
-
-    let onnx_file = read_file_to_bytes(&repo.get("model.onnx")?)?;
-
-    let jina_model = UserDefinedEmbeddingModel::new(onnx_file, tokenizer_files)
-        .with_pooling(Pooling::Mean)
-        .with_quantization(QuantizationMode::Dynamic);
-
-    Ok(jina_model)
 }
 
 pub fn save_vectors(vectors: &BTreeMap<String, Point>) -> Result<()> {
@@ -90,20 +41,6 @@ pub fn load_vectors() -> Result<BTreeMap<String, Point>> {
     file.read_to_end(&mut buffer)?;
     let decoded: BTreeMap<String, Point> = deserialize(&buffer)?;
     Ok(decoded)
-}
-
-pub fn encode(sentence: &str) -> Result<Vec<f32>> {
-    let jina_model = load_model()?;
-    let jina_options = InitOptionsUserDefined::new().with_max_length(8192); // <- Jina FTW
-    let model = TextEmbedding::try_new_from_user_defined(jina_model, jina_options)?;
-    let documents = vec![sentence];
-    let embeddings = model.embed(documents, None)?;
-    // Check if there is at least one embedding
-    if embeddings.is_empty() {
-        bail!("No embeddings were generated.");
-    }
-    // Return the first embedding vector
-    Ok(embeddings.into_iter().next().unwrap())
 }
 
 #[derive(Clone, Debug)]

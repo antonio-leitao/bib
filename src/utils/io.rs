@@ -1,5 +1,5 @@
 use crate::stacks::Stack;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use shellexpand::tilde;
 use std::fs::{self, File};
@@ -100,24 +100,25 @@ pub fn papers_path() -> Result<PathBuf> {
     Ok(bib_path)
 }
 
-pub fn read_and_move_file(path: &str, paper_id: &str) -> Result<Vec<u8>> {
+pub fn read_file_as_bytes(path: PathBuf) -> Result<Vec<u8>> {
     // Read the contents of the file
     let mut file = File::open(path)?;
     let mut contents = Vec::new();
-
     file.read_to_end(&mut contents)?;
-    // Move the file
-    let new_path = pdf_path(paper_id)?;
-    fs::rename(path, new_path)?;
     // Return the contents
     Ok(contents)
 }
 
-pub fn model_dir() -> Result<PathBuf> {
-    // Expand the tilde to the user's home directory
-    let base_dir = tilde("~/.bib/llm").to_string();
-    let pdfs_path = PathBuf::from(&base_dir);
-    // Make sure the directories exist
-    fs::create_dir_all(&pdfs_path)?;
-    Ok(pdfs_path)
+pub fn save_pdf_bytes(paper_id: &str, pdf_bytes: &[u8]) -> Result<PathBuf> {
+    let target_path = pdf_path(paper_id)?; // pdf_path should be an existing util
+    let mut file = File::create(&target_path)
+        .map_err(|e| anyhow!("Failed to create file {}: {}", target_path.display(), e))?;
+    file.write_all(pdf_bytes).map_err(|e| {
+        anyhow!(
+            "Failed to write PDF bytes to {}: {}",
+            target_path.display(),
+            e
+        )
+    })?;
+    Ok(target_path)
 }

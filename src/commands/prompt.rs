@@ -1,12 +1,12 @@
 use crate::base::{save_papers, Paper};
-use crate::blog;
 use crate::embedding::Point;
 use crate::stacks::Stack;
 use crate::{
     base::load_papers,
-    embedding::{encode, k_nearest, load_vectors},
+    embedding::{k_nearest, load_vectors},
     utils::io::read_config_file,
 };
+use crate::{blog, utils};
 use anyhow::{anyhow, Result};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use indexmap::IndexMap;
@@ -43,7 +43,7 @@ fn filter_by_query(
     indicies: &Vec<String>,
     k: usize,
 ) -> Result<Vec<String>> {
-    let query = encode(&query)?;
+    let query = utils::ai::query_embedding_sync(&query)?;
     Ok(k_nearest(&query, points, indicies, k))
 }
 

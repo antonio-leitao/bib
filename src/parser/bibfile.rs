@@ -56,7 +56,7 @@ fn extract_entry(bibtex_str: &str) -> Result<Entry> {
 }
 
 impl Paper {
-    pub fn from_bibtex(bibtex: &str) -> Result<Self> {
+    pub fn new(bibtex: &str) -> Result<Self> {
         let entry = extract_entry(bibtex)?;
         let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
         let author = parse_author(&entry)?;

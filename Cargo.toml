@@ -1,6 +1,6 @@
 [package]
 name = "bib"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["António Leitão"]
 description = "LLM empowered bibliography management."
@@ -23,10 +23,10 @@ bincode = "1.3.3"
 toml = "0.8.8"
 open = "5.0.0"
 quick-xml = { version = "0.31.0", features = ["serde", "serialize", "overlapped-lists"] }
-fastembed = "4.0.0"
-hf-hub = "0.3.2"
-pdf-extract = "0.7.9"
-gag = "1.0.0"
 dotzilla = "0.1.0"
 copypasta = "0.10.1"
 indexmap = { version = "2.5.0", features = ["serde"] }
+url = "2.5.4"
+tokio = { version = "1.45.0", features = ["full"] }
+serde_json = "1.0.140"
+thiserror = "2.0.12"

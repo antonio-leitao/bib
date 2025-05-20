@@ -22,12 +22,6 @@ enum Commands {
         /// Initial query for searching
         #[clap(value_name = "URL", default_value_t = String::from(""))]
         url: String,
-        /// Flag to indicate if it's a PDF
-        #[clap(long, short, action, group = "from")]
-        pdf: bool,
-        /// Flag to indicate if it's a PDF
-        #[clap(long, short, action, group = "from")]
-        web: bool,
     },
     /// Open pdf manually
     Open {
@@ -120,7 +114,7 @@ fn main() {
             _ => Ok(println!("Invalid stack usage")),
         },
         Commands::Unstack => commands::stack::unstack(),
-        Commands::Add { url, pdf, web } => commands::add::add(url, pdf, web),
+        Commands::Add { url } => commands::add::add(url),
         Commands::Open { query } => commands::prompt::open(query),
         Commands::Yank { query } => commands::prompt::yank(query),
         Commands::List { max } => commands::prompt::list(max),
