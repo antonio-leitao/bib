@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use termion::color;
 mod base;
 mod commands;
 mod embedding;
@@ -22,6 +21,10 @@ enum Commands {
         /// Initial query for searching
         #[clap(value_name = "URL", default_value_t = String::from(""))]
         url: String,
+
+        /// Optional comments and observations
+        #[arg(value_name = "NOTES", short, long)]
+        notes: Option<String>,
     },
     /// Open pdf manually
     Open {
@@ -114,7 +117,7 @@ fn main() {
             _ => Ok(println!("Invalid stack usage")),
         },
         Commands::Unstack => commands::stack::unstack(),
-        Commands::Add { url } => commands::add::add(url),
+        Commands::Add { url, notes } => commands::add::add(url, notes),
         Commands::Open { query } => commands::prompt::open(query),
         Commands::Yank { query } => commands::prompt::yank(query),
         Commands::List { max } => commands::prompt::list(max),
@@ -128,9 +131,10 @@ fn main() {
 
 fn erro(err: String) {
     println!(
-        "{}error{}: {}",
-        color::Fg(color::Red),
-        color::Fg(color::Reset),
+        "{}{:>12}{} {}",
+        termion::color::Fg(termion::color::Red),
+        "Error",
+        termion::color::Fg(termion::color::Reset),
         err
     );
 }

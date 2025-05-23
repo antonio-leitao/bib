@@ -101,7 +101,7 @@ pub fn rename(old_name: String, new_name: String) -> Result<()> {
     for (_, paper) in papers.iter_mut() {
         for stack in paper.stack.iter_mut() {
             if stack.name == old_name {
-                stack.name = new_name.to_string();
+                stack.name = new_name.clone();
             }
         }
     }
@@ -109,7 +109,7 @@ pub fn rename(old_name: String, new_name: String) -> Result<()> {
     //change name of stack
     for stack in config.stacks.iter_mut() {
         if stack.name == old_name {
-            stack.name = new_name.to_string();
+            stack.name = new_name.clone();
         }
     }
 
@@ -118,7 +118,7 @@ pub fn rename(old_name: String, new_name: String) -> Result<()> {
         None => (),
         Some(mut stack) => {
             if stack.name == old_name {
-                stack.name = new_name.to_string()
+                stack.name = new_name.clone()
             }
         }
     };

@@ -1,4 +1,5 @@
 use crate::blog;
+use crate::utils::fmt::Spinner;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -58,14 +59,14 @@ struct FileUploadApiResponse {
 }
 
 // -- Content Generation (for BibTeX and Text Extraction) --
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FileDataPart {
     mime_type: String,
     file_uri: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum RequestPart {
     Text {
@@ -83,7 +84,7 @@ struct GenerateContentRequest {
     // generation_config: Option<GenerationConfig>, // For more control
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ContentPart {
     parts: Vec<RequestPart>,
 }
@@ -234,17 +235,91 @@ fn upload_pdf_bytes_internal(pdf_bytes: &[u8]) -> Result<UploadedFileInfo, Gemin
     Ok(response_body.file)
 }
 
-/// Generates BibTeX from an uploaded PDF file handle.
+// New structured response types
+#[derive(Debug, Serialize, Deserialize)]
+struct BibTexResponse {
+    bibtex_entry: String,
+    notes: Option<String>, // Any additional notes about the extraction
+}
+
+// Return type for the function
+#[derive(Debug)]
+pub struct BibTexResult {
+    pub bibtex: String,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ResponseSchema {
+    #[serde(rename = "type")]
+    schema_type: String,
+    properties: SchemaProperties,
+    required: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct SchemaProperties {
+    bibtex_entry: PropertyDefinition,
+    notes: PropertyDefinition,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PropertyDefinition {
+    #[serde(rename = "type")]
+    prop_type: String,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enum_values: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GenerationConfig {
+    response_mime_type: String,
+    response_schema: ResponseSchema,
+}
+
+// Updated request structure to include generation config
+#[derive(Serialize, Deserialize)]
+struct StructuredGenerateContentRequest {
+    contents: Vec<ContentPart>,
+    generation_config: GenerationConfig,
+}
+
+fn create_response_schema() -> ResponseSchema {
+    ResponseSchema {
+        schema_type: "object".to_string(),
+        properties: SchemaProperties {
+            bibtex_entry: PropertyDefinition {
+                prop_type: "string".to_string(),
+                description:
+                    "Complete BibTeX entry formatted exactly as it should appear in a .bib file"
+                        .to_string(),
+                enum_values: None,
+            },
+            notes: PropertyDefinition {
+                prop_type: "string".to_string(),
+                description:
+                    "Any additional notes about missing information or extraction challenges"
+                        .to_string(),
+                enum_values: None,
+            },
+        },
+        required: vec!["bibtex_entry".to_string()],
+    }
+}
+
+/// Generates BibTeX from an uploaded PDF file handle using structured output.
 async fn get_bibtex_from_handle_async(
     client: &Client,
     api_key: &str,
     file_info: &UploadedFileInfo,
-) -> Result<String, GeminiError> {
+) -> Result<BibTexResult, GeminiError> {
     let url = format!(
         "{}/models/{}:generateContent?key={}",
         GEMINI_API_BASE_URL, MULTIMODAL_MODEL, api_key
     );
-    let request_body = GenerateContentRequest {
+
+    let request_body = StructuredGenerateContentRequest {
         contents: vec![ContentPart {
             parts: vec![
                 RequestPart::FileData {
@@ -258,6 +333,10 @@ async fn get_bibtex_from_handle_async(
                 },
             ],
         }],
+        generation_config: GenerationConfig {
+            response_mime_type: "application/json".to_string(),
+            response_schema: create_response_schema(),
+        },
     };
 
     let response = client.post(&url).json(&request_body).send().await?;
@@ -267,6 +346,7 @@ async fn get_bibtex_from_handle_async(
     }
 
     let response_body: GenerateContentResponse = response.json().await?;
+
     if let Some(api_err) = response_body.error {
         return Err(GeminiError::ApiError {
             status: api_err.code as u16,
@@ -284,13 +364,21 @@ async fn get_bibtex_from_handle_async(
         .and_then(|part| part.text)
         .ok_or(GeminiError::NoContentFound)?;
 
-    // Extract content between <bibtex> tags
-    if let (Some(start), Some(end)) = (text.find("<bibtex>"), text.rfind("</bibtex>")) {
-        if start < end {
-            return Ok(text[start + "<bibtex>".len()..end].trim().to_string());
+    // Parse the structured JSON response
+    match serde_json::from_str::<BibTexResponse>(&text) {
+        Ok(structured_response) => {
+            // Return the structured result
+            Ok(BibTexResult {
+                bibtex: structured_response.bibtex_entry.trim().to_string(),
+                notes: structured_response.notes,
+            })
+        }
+        Err(json_err) => {
+            println!("Failed to parse structured response: {}", json_err);
+            println!("Raw response: {}", text);
+            Err(GeminiError::NoContentFound)
         }
     }
-    Err(GeminiError::NoContentFound) // Or a more specific "BibTeX format error"
 }
 
 const TEXT_EXTRACTION_PROMPT: &str =
@@ -399,7 +487,6 @@ async fn delete_file_by_name_async(
             .text()
             .await
             .unwrap_or_else(|_| format!("Failed to delete file, status {}", status));
-        eprintln!("Delete error response: {}", error_text);
         return Err(GeminiError::FileApiError(format!(
             "Delete failed for {}: Status {}, Body: {}",
             file_name, status, error_text
@@ -413,6 +500,8 @@ async fn delete_file_by_name_async(
 /// Gets only the embedding for the given PDF bytes.
 /// Uploads the PDF, extracts text, gets embedding, then deletes the uploaded file.
 async fn get_pdf_embedding_async(pdf_bytes: &[u8]) -> Result<Vec<f32>, GeminiError> {
+    let mut spinner = Spinner::new("Processing", "PDF for embedding");
+    spinner.start();
     let client = Client::new();
     let api_key = get_api_key()?;
 
@@ -434,24 +523,16 @@ async fn get_pdf_embedding_async(pdf_bytes: &[u8]) -> Result<Vec<f32>, GeminiErr
     .await;
 
     // 4. Delete file
-    if let Err(e) = delete_file_by_name_async(&client, &api_key, &file_info.name).await {
-        eprintln!(
-            "Failed to delete file {} after processing: {:?}. Main result: {:?}",
-            file_info.name, e, result
-        );
-        // Depending on policy, you might want to bubble up the delete error
-        // or prioritize the main processing error. Here we just log it.
-    }
-
+    delete_file_by_name_async(&client, &api_key, &file_info.name).await?;
+    spinner.finish(None);
     result // Return the result of text extraction + embedding
 }
 
 /// Gets both BibTeX and embedding for the given PDF bytes.
 /// Uploads PDF, processes concurrently, then deletes the uploaded file.
-pub async fn get_pdf_bibtex_and_embedding(
-    pdf_bytes: &[u8],
-) -> Result<(String, Vec<f32>), GeminiError> {
-    blog!("Extracting", "bibtex and embedding from pdf");
+async fn get_pdf_bibtex_and_embedding(pdf_bytes: &[u8]) -> Result<(String, Vec<f32>), GeminiError> {
+    let mut spinner = Spinner::new("Processing", "PDF for BibTeX and embedding");
+    spinner.start();
     let client = Client::new();
     let api_key = get_api_key()?;
 
@@ -484,21 +565,14 @@ pub async fn get_pdf_bibtex_and_embedding(
 
     // 3. Delete file
     // This delete runs regardless of whether try_join succeeded or failed, as long as upload was ok.
-    if let Err(e) = delete_file_by_name_async(&client, &api_key, &file_info.name).await {
-        eprintln!(
-            "Failed to delete file {} after processing: {:?}. Main result: {:?}",
-            file_info.name, e, processing_result
-        );
-        // Policy: if delete fails but processing was ok, should we error out?
-        // For now, we prioritize the processing result. If processing_result is an error,
-        // and delete also errors, the processing_result error is returned.
-        // If processing_result is Ok, and delete errors, we still return Ok(processing_result).
-    }
-    //match processing_result {
-    //    Ok((bibtex, embedding)) => Ok(PdfProcessResult { bibtex, embedding }),
-    //    Err(e) => Err(e), // The error from try_join (first one that failed)
-    //}
-    processing_result
+    delete_file_by_name_async(&client, &api_key, &file_info.name).await?;
+    spinner.finish(None);
+    processing_result.map(|(bibtex_result, vec)| {
+        if let Some(notes) = &bibtex_result.notes {
+            blog!("Note", "{}", notes);
+        }
+        (bibtex_result.bibtex, vec)
+    })
 }
 
 /// Synchronous wrapper for get_pdf_embedding_and_bibtex
@@ -551,11 +625,7 @@ const BIBTEX_PROMPT: &str = r#"You are tasked with creating a complete and corre
    - Separate multiple authors with " and "
    - Use standard abbreviations for months if needed (jan, feb, mar, etc.)
 
-4. Provide your final BibTeX entry within <bibtex> tags. Ensure that the entry is complete, correctly formatted, and ready for use in a LaTeX document.
+3. Provide your final BibTeX entry in the bibtex_entry field. Ensure that the entry is complete, correctly formatted, and ready for use in a LaTeX document.
 
-<bibtex>
-[Your BibTeX entry goes here]
-</bibtex>
-
-If you are unable to extract certain information from the PDF content, use your best judgment to create the most complete BibTeX entry possible with the available information. If critical information is missing, indicate this in a comment within the BibTeX entry.
+4. If you are unable to extract certain information from the PDF content, use your best judgment to create the most complete BibTeX entry possible with the available information. If critical information is missing, indicate this in a comment within the BibTeX entry.
 "#;

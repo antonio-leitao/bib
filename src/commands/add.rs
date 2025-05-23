@@ -5,7 +5,10 @@ use crate::stacks::Stack;
 use crate::{blog, utils};
 use anyhow::{anyhow, bail, Result};
 use indexmap::IndexMap;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::io::Read;
 use std::path::PathBuf;
+use std::time::Duration;
 use url::Url; // For URL parsing
 
 fn is_duplicate(
@@ -91,8 +94,8 @@ pub fn classify_input(input_str: &str) -> InputKind {
 }
 
 fn download_url_as_bytes(url: &str) -> Result<Vec<u8>> {
-    blog!("Downloading", "from URL: {}", url);
-    let response = reqwest::blocking::get(url)
+    // Start the request but don't download the body yet
+    let mut response = reqwest::blocking::get(url)
         .map_err(|e| anyhow!("Failed to download from URL '{}': {}", url, e))?;
 
     if !response.status().is_success() {
@@ -102,17 +105,54 @@ fn download_url_as_bytes(url: &str) -> Result<Vec<u8>> {
             response.status()
         );
     }
-    let bytes = response
-        .bytes()
-        .map_err(|e| anyhow!("Failed to read bytes from response of URL '{}': {}", url, e))?;
-    Ok(bytes.to_vec())
+
+    // Get the content length if available
+    let total_size = response.content_length().unwrap_or(0);
+
+    // Create a progress bar with simplified style
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{prefix:.blue} [{bar:40}] {percent}%")
+            .unwrap()
+            .progress_chars("=> "),
+    );
+    pb.set_prefix(" Downloading");
+    pb.enable_steady_tick(Duration::from_millis(100));
+
+    // Create a wrapper reader that will update the progress bar
+    let mut content = Vec::new();
+    let mut buffer = [0; 8192]; // 8KB buffer
+
+    // Read the response body in chunks
+    loop {
+        let bytes_read = response
+            .read(&mut buffer)
+            .map_err(|e| anyhow!("Failed to read bytes from response of URL '{}': {}", url, e))?;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        content.extend_from_slice(&buffer[..bytes_read]);
+        pb.set_position(content.len() as u64);
+    }
+
+    // Finish the progress bar with green completion message
+    pb.finish_and_clear();
+    println!(
+        "  \x1b[32mDownloaded\x1b[0m {} ({} bytes)",
+        url,
+        content.len()
+    );
+
+    Ok(content)
 }
 
-pub fn add(input: String) -> Result<()> {
+pub fn add(input: String, notes: Option<String>) -> Result<()> {
     let (bibtex, embedding, bytes) = match classify_input(&input) {
         InputKind::ArxivUrl(url) => {
             let bibtex = arxiv::arxiv2bib(&url)?;
-            println!("{}", bibtex);
             let arxiv_id = arxiv::get_arxiv_id(&url).ok_or(anyhow!("Invalid arxiv link"))?;
             let arxiv_url = arxiv::get_arxiv_pdf_link(arxiv_id);
             let bytes = download_url_as_bytes(&arxiv_url)?;
@@ -143,7 +183,7 @@ pub fn add(input: String) -> Result<()> {
             );
         }
     };
-    let mut paper = Paper::new(&bibtex)?;
+    let mut paper = Paper::new(&bibtex, notes)?;
     utils::io::save_pdf_bytes(&paper.id, &bytes)?;
 
     let config = utils::io::read_config_file()?;

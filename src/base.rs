@@ -9,13 +9,14 @@ use std::fs::File;
 use std::io::{Read, Write};
 use termion::color;
 
-#[derive(Clone, Debug, Serialize, Deserialize)] // TODO: Why do we need this clone?
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Paper {
     pub id: String,
     pub author: String,
     pub year: i64,
     pub title: String,
     pub stack: Vec<Stack>,
+    pub notes: Option<String>,
     pub bibtex: String,
 }
 
@@ -29,26 +30,39 @@ impl Paper {
             .iter()
             .fold(0, |acc, stack| acc + stack.name.len() + 3)
     }
-    fn trim_title(&self, max_length: u16) -> String {
+    fn trim_details(&self, details: &str, max_length: u16) -> String {
         let mut length = max_length as usize;
         length -= 4 + 2;
         length -= self.author.len() + 4;
         length -= self.get_slack();
-        fit_string_to_length(&self.title, length)
+        fit_string_to_length(details, length)
     }
-    pub fn display(&self, max_width: u16) -> String {
-        // let slack = self.get_slack();
+    pub fn display(&self, max_width: u16, display_notes: bool) -> String {
         let mut display_string = format!(
-            "{} {}|{} {} {}|{} {}",
+            "{} {}|{} {} {}| ",
             self.year,
             color::Fg(color::Rgb(83, 110, 122)),
             color::Fg(color::Reset),
             self.author,
             color::Fg(color::Rgb(83, 110, 122)),
-            color::Fg(color::Reset),
-            self.trim_title(max_width),
         );
-        // display_string = fit_string_to_length(display_string, max_width - slack);
+
+        // Only display notes if display_notes is true AND notes field contains a value
+        if display_notes && self.notes.is_some() {
+            display_string.push_str(&format!(
+                "{}{}",
+                self.trim_details(self.notes.as_ref().unwrap(), max_width),
+                color::Fg(color::Reset)
+            ))
+        } else {
+            // Default to showing title
+            display_string.push_str(&format!(
+                "{}{}",
+                color::Fg(color::Reset),
+                self.trim_details(&self.title, max_width),
+            ))
+        }
+
         for stack in self.stack.iter() {
             display_string.push_str(&format!(" {}", stack));
         }

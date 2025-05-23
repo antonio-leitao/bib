@@ -20,13 +20,14 @@ Each reference is embedding using an LLM and you can query your entire library u
 The main power of `bib` is to allow to create and manage multiple stacks (branches).
 
 #### Contents
-  - [Installation](#installation)
-  - [Usage](#usage)
-    - [Stacks](#stacks)
-    - [Managing References](#managing-references)
-    - [Exploration](#exploration)
-    - [Export](#export)
-    
+
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Stacks](#stacks)
+  - [Managing References](#managing-references)
+  - [Exploration](#exploration)
+  - [Export](#export)
+
 # Installation
 
 > [!NOTE]
@@ -37,16 +38,18 @@ The main power of `bib` is to allow to create and manage multiple stacks (branch
 brew tap antonio-leitao/taps
 brew install bib
 ```
+
 # Usage
+
 `bib` allows for adding and importing bib references, both manually and automatically from arXiv.
 
-
 ## Stacks
+
 `git` has branches, `bib` has stacks.
 This allows you to create separated stacks of references (`base`, `to_read` etc.) and manage them separately.
 The api is done as to mimic `git` as close as possible
 
-- `bib stack` : Lists all stacks including active one. 
+- `bib stack` : Lists all stacks including active one.
 - `bib stack <NAME>` : Switches to stack named `NAME`.
 - `bib stack <NAME> new` : Creates new empty stack named `NAME`.
 - `bib stack <NAME> drop` : Deletes the stack named `NAME`.
@@ -56,23 +59,21 @@ The api is done as to mimic `git` as close as possible
 - `bib stack <NAME> merge <FROM>` : Adds all papers of `FROM` into stack `NAME`.
 - `bib unstack` : Work with all references at the same time.
 
-
 ## Adding references
+
 References are always added to the current stack.
 Unstack before adding if you dont want to assign them to that stack.
 Or toggle the stack from the reference later.
 
-- `bib add <ARXIV URL>` : Automatically adds reference given an arxiv url. This will be extended to included other sources.
-- `bib add --pdf <PATH>` :Adds paper given a local pdf path. Prompts user to manually add a bibtex reference. 
-- `bib add --web <URL>` :Adds paper given an online pdf url. Prompts user to manually add a bibtex reference. 
-
+- `bib add <ARXIV URL | PDF URL | PATH> --notes "Some comments on the paper"` : Automatically adds reference given an arxiv url, or a pdf url or a local pdf path.
+  Optionally provide notes on the paper
 
 ## Exploration
 
-- `bib list <LENGTH>` : Prints all references in the stack. Optionally choose list size. 
-- `bib open <QUERY>` : Select reference to open.
+- `bib list <LENGTH>` : Prints all references in the stack. Optionally choose list size.
+- `bib open <QUERY>` : Select reference to open. Press `Tab` to toggle/view the comments on each paper.
 
 ## Export
 
-- `bib yank <QUERY>` : Copies bibtex of selected reference to clipboard. 
+- `bib yank <QUERY>` : Copies bibtex of selected reference to clipboard.
 - `bib export <FILENAME>` : Export bibfile to standard output of all references or selected stack.

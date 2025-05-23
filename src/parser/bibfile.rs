@@ -56,7 +56,7 @@ fn extract_entry(bibtex_str: &str) -> Result<Entry> {
 }
 
 impl Paper {
-    pub fn new(bibtex: &str) -> Result<Self> {
+    pub fn new(bibtex: &str, notes: Option<String>) -> Result<Self> {
         let entry = extract_entry(bibtex)?;
         let title = parse_title(&entry)?.replace("\\n", "").replace("\\t", "");
         let author = parse_author(&entry)?;
@@ -66,6 +66,7 @@ impl Paper {
             author,
             year,
             title,
+            notes,
             stack: Vec::new(),
             bibtex: bibtex.to_owned(),
         })

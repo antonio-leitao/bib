@@ -56,17 +56,24 @@ fn prompt_select(papers: &[Paper]) -> Result<Option<usize>> {
     //hide cursor
     write!(stdout, "{}", termion::cursor::Hide)?;
     let mut current_index = 0;
-    draw_ui(&mut stdout, current_index, papers, width)?;
+    // State for toggling display between title and comment
+    // false = show title, true = show comment (if available)
+    let mut states: Vec<bool> = vec![false; papers.len()];
+    draw_ui(&mut stdout, current_index, papers, width, &states)?;
 
     for c in stdin.keys() {
         match c.unwrap() {
             Key::Up | Key::Char('k') if current_index > 0 => {
                 current_index -= 1;
-                draw_ui(&mut stdout, current_index, papers, width)?;
+                draw_ui(&mut stdout, current_index, papers, width, &states)?;
             }
             Key::Down | Key::Char('j') if current_index < papers.len() - 1 => {
                 current_index += 1;
-                draw_ui(&mut stdout, current_index, papers, width)?;
+                draw_ui(&mut stdout, current_index, papers, width, &states)?;
+            }
+            Key::Char('\t') => {
+                states[current_index] = !states[current_index];
+                draw_ui(&mut stdout, current_index, papers, width, &states)?;
             }
             Key::Char('\n') => {
                 selected_index = Some(current_index);
@@ -94,11 +101,19 @@ fn draw_ui(
     current_index: usize,
     items: &[Paper],
     width: u16,
+    item_display_states: &[bool],
 ) -> Result<()> {
     // Move the cursor to the first line of the UI
     for (i, word) in items.iter().enumerate() {
         let prefix = if i == current_index { "* " } else { "  " };
-        writeln!(stdout, "{}{}\r", prefix, word.display(width - 2))?;
+        write!(
+            stdout,
+            "{}{}{}",
+            termion::clear::CurrentLine,
+            prefix,
+            word.display(width - 2, item_display_states[i])
+        )?;
+        writeln!(stdout, "\r")?;
     }
     write!(stdout, "{}", termion::cursor::Up(items.len() as u16))?;
     stdout.flush()?;
@@ -122,7 +137,7 @@ pub fn list(max: Option<usize>) -> Result<()> {
         .iter()
         .filter_map(|key| papers.get(key).cloned())
         .take(max_entries)
-        .for_each(|paper| println!("{}", paper.display(width)));
+        .for_each(|paper| println!("{}", paper.display(width, false)));
 
     // Print a message if there are more references not being displayed
     if n_refs > max_entries {
