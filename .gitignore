@@ -3,3 +3,4 @@ Makefile
 /tapes
 bib.tar.gz
 /.jina_cache
+Cargo.lock
