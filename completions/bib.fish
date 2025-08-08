@@ -19,16 +19,21 @@ function __fish_bib_complete_papers
     set -l context $argv[1]
     set -l current (commandline -ct)
     
-    # Get completions from bib
-    set -l completions (bib --complete "$current" --complete-context "$context" 2>/dev/null)
+    # Dynamically find the bib command
+    set -l bib_cmd (command -v bib)
+    if not test -e "$bib_cmd"
+        return 1
+    end
+
+    # Use the found command
+    set -l completions ($bib_cmd --complete "$current" --complete-context "$context" 2>/dev/null)
     
     for comp in $completions
-        # Split on first colon to get value and description
         set -l parts (string split -m 1 ":" -- $comp)
         if test (count $parts) -eq 2
-            echo $parts[1]\t$parts[2]
+            echo -e "$parts[1]\t$parts[2]"
         else if test (count $parts) -eq 1
-            echo $parts[1]
+            echo "$parts[1]"
         end
     end
 end

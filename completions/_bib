@@ -21,13 +21,9 @@ _bib() {
         args)
             case $line[1] in
                 add)
-                    # For the 'add' command, we just complete files.
                     _files
                     ;;
                 search)
-                    # _arguments handles parsing flags like --author.
-                    # The final *: part says "for any remaining word,
-                    # call the _bib_complete_search function".
                     _arguments \
                         '(-a --author)'{-a,--author}'[Search by author instead of title]' \
                         '(-n --limit)'{-n,--limit}'[Maximum results]:limit:((5 10 20 50 100))' \
@@ -47,19 +43,25 @@ _bib() {
     esac
 }
 
-# This helper is now much simpler.
 _bib_complete_search() {
     local context="search-title"
-    # Check if --author is present anywhere on the line before the cursor.
     if (( ${words[(I)--author]} )) || (( ${words[(I)-a]} )); then
         context="search-author"
     fi
 
-    # _wanted is the key. It tells Zsh: "Run this command to get results.
-    # The command is responsible for filtering. Don't re-filter them."
-    # $PREFIX is the word being completed (e.g., "zation").
-    # The output from `bib --complete` is expected to be `value:description`.
-    _wanted papers 'papers' bib --complete "$PREFIX" --complete-context "$context"
+    # === THE PORTABLE FIX IS HERE ===
+    # 1. Dynamically find the full path to the 'bib' command.
+    #    `whence` is the Zsh-native way to do this.
+    local bib_cmd
+    bib_cmd=$(whence bib)
+
+    # 2. If 'bib' isn't found, exit gracefully.
+    if [[ -z "$bib_cmd" ]]; then
+        return 1
+    fi
+    
+    # 3. Use the found path to call the command.
+    _wanted papers 'papers' "$bib_cmd" --complete "$PREFIX" --complete-context "$context"
 }
 
 _bib "$@"
