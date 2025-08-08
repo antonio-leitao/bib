@@ -1,43 +1,42 @@
 #compdef bib
 
-# Helper function to get completions from bib
-_bib_get_completions() {
-    local context="$1"
-    local query="$2"
-    
-    # Call bib and get completions
-    local IFS=$'\n'
-    local -a completions
-    completions=($(bib --complete "$query" --complete-context "$context" 2>/dev/null))
-    
-    if (( ${#completions[@]} == 0 )); then
-        return 1
-    fi
-    
-    # Format completions for _describe
-    local -a formatted_completions
-    local item
-    for item in $completions; do
-        # Keep the value:description format that _describe expects
-        formatted_completions+=("$item")
-    done
-    
-    # Use _describe to show the completions
-    _describe -U -t papers 'papers' formatted_completions
-    return 0
-}
+# This script provides modern, fuzzy-matching completions for the 'bib' command.
+# It is self-contained and does not require the user to have global fuzzy-matching
+# settings in their .zshrc.
 
+# --- Style Definitions Specific to 'bib' ---
+# We define these styles to apply ONLY to the 'bib' command, ensuring a
+# rich experience without altering the user's global shell behavior.
+
+# 1. Enable the interactive menu selection UI.
+zstyle ':completion:*:*:bib:*:*' menu select
+
+# 2. Group completions and provide a descriptive header.
+zstyle ':completion:*:*:bib:*:*' group-name ''
+
+# 3. Define the fuzzy matching rules for Zsh to use.
+zstyle ':completion:*:*:bib:*:*' matcher-list 'm:{a-z}={A-Z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+#    Breakdown:
+#    'm:{a-z}={A-Z}'    -> Case-insensitive matching (e.g., 'foo' matches 'FooBar').
+#    'r:|[._-]=* r:|=*' -> Allow matching on either side of a separator (e.g., 'fb' matches 'foo-bar').
+#    'l:|=* r:|=*'      -> Allow matching anywhere, not just at the start of a word.
+
+
+# --- Main Completion Logic ---
 _bib() {
     local curcontext="$curcontext" state line
     typeset -A opt_args
 
+    # This defines the main structure: a command followed by arguments.
     _arguments -C \
         '1: :->command' \
         '*:: :->args'
 
     case $state in
         command)
-            local commands=(
+            # Provide completions for the first-level subcommands.
+            local -a commands
+            commands=(
                 'add:Add new reference from URL or PDF'
                 'search:Search papers using fuzzy matching'
                 'list:List all papers in the database'
@@ -46,31 +45,40 @@ _bib() {
             _describe 'command' commands
             ;;
         args)
+            # Handle completions for arguments of a specific subcommand.
             case $line[1] in
                 add)
+                    # Standard argument and file completion for 'add'.
                     _arguments \
-                        '1:url:_files' \
                         '(-n --notes)'{-n,--notes}'[Optional notes]:notes:' \
-                        '(-h --help)'{-h,--help}'[Show help]'
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        '1:URL or PDF Path:_files'
                     ;;
+
                 search)
-                    # Check for author flag
+                    # --- THE CORE OF THE NEW LOGIC ---
+                    # Determine the search context based on flags present on the line.
                     local context="search-title"
-                    if (( ${words[(I)-a]} )) || (( ${words[(I)--author]} )); then
+                    local description="titles"
+                    if (( ${words[(I)-a]} || ${words[(I)--author]} )); then
                         context="search-author"
+                        description="authors"
                     fi
-                    
-                    _arguments -C \
+
+                    # Define arguments for 'search'. The magic is in the last line.
+                    _arguments \
                         '(-a --author)'{-a,--author}'[Search by author instead of title]' \
                         '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
                         '(-h --help)'{-h,--help}'[Show help]' \
-                        '*: :_bib_complete_search'
+                        "*:Search for $description:_values '$description' \$(bib --complete --complete-context '$context')"
                     ;;
+
                 list)
                     _arguments \
                         '(-l --limit)'{-l,--limit}'[Maximum papers to display]:limit:' \
                         '(-h --help)'{-h,--help}'[Show help]'
                     ;;
+
                 stats)
                     _arguments \
                         '(-h --help)'{-h,--help}'[Show help]'
@@ -78,25 +86,6 @@ _bib() {
             esac
             ;;
     esac
-}
-
-# Completion function for search queries
-_bib_complete_search() {
-    # Determine context
-    local context="search-title"
-    if (( ${words[(I)-a]} )) || (( ${words[(I)--author]} )); then
-        context="search-author"
-    fi
-    
-    # Get what user has typed so far
-    # This is the KEY: use $PREFIX for partial word completion
-    local query="$PREFIX"
-    
-    # Get and display completions
-    _bib_get_completions "$context" "$query"
-    
-    # Never fall back to file completion
-    return 0
 }
 
 _bib "$@"
