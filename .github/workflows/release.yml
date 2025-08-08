@@ -1,0 +1,433 @@
+name: Release and Update Homebrew
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers on version tags like v0.1.0, v1.0.0, etc.
+  workflow_dispatch: # Allows manual triggering
+
+env:
+  CARGO_TERM_COLOR: always
+  PROJECT_NAME: bib
+  # Update this to match your tap repository name
+  HOMEBREW_TAP_REPO: antonio-leitao/homebrew-taps
+
+jobs:
+  build-and-release:
+    name: Build for ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # macOS Intel
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset_name: bib-x86_64-apple-darwin
+          # macOS Apple Silicon
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset_name: bib-aarch64-apple-darwin
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_name: bib-x86_64-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Release Binary
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Generate Completions
+        run: |
+          # Create completions directory
+          mkdir -p completions
+
+          # Generate zsh completion
+          cat > completions/_bib << 'EOF'
+          #compdef bib
+
+          _bib() {
+              local curcontext="$curcontext" state line
+              typeset -A opt_args
+
+              _arguments -C \
+                  '1: :->command' \
+                  '*:: :->args'
+
+              case $state in
+                  command)
+                      local commands=(
+                          'add:Add new reference from URL or PDF'
+                          'search:Search papers using fuzzy matching'
+                          'list:List all papers in the database'
+                          'stats:Show database statistics'
+                      )
+                      _describe 'command' commands
+                      ;;
+                  args)
+                      case $line[1] in
+                          add)
+                              _arguments \
+                                  '1:url:_files' \
+                                  '(-n --notes)'{-n,--notes}'[Optional notes]:notes:' \
+                                  '(-h --help)'{-h,--help}'[Show help]'
+                              ;;
+                          search)
+                              _arguments -C \
+                                  '(-a --author)'{-a,--author}'[Search by author instead of title]' \
+                                  '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
+                                  '(-h --help)'{-h,--help}'[Show help]' \
+                                  '*:query:->search_query'
+                              
+                              case $state in
+                                  search_query)
+                                      local context="search-title"
+                                      if [[ ${opt_args[-a]} == 1 ]] || [[ ${opt_args[--author]} == 1 ]]; then
+                                          context="search-author"
+                                      fi
+                                      
+                                      local current_word="${words[CURRENT]}"
+                                      local completions
+                                      completions=(${(f)"$(bib --complete "$current_word" --complete-context "$context" 2>/dev/null)"})
+                                      
+                                      if [[ ${#completions[@]} -gt 0 ]]; then
+                                          _describe 'papers' completions
+                                      else
+                                          _message 'search query'
+                                      fi
+                                      ;;
+                              esac
+                              ;;
+                          list)
+                              _arguments \
+                                  '(-l --limit)'{-l,--limit}'[Maximum papers to display]:limit:' \
+                                  '(-h --help)'{-h,--help}'[Show help]'
+                              ;;
+                          stats)
+                              _arguments \
+                                  '(-h --help)'{-h,--help}'[Show help]'
+                              ;;
+                      esac
+                      ;;
+              esac
+          }
+
+          _bib "$@"
+          EOF
+
+          # Generate bash completion
+          cat > completions/bib.bash << 'EOF'
+          # Bash completion for bib
+
+          _bib() {
+              local cur prev opts
+              COMPREPLY=()
+              cur="${COMP_WORDS[COMP_CWORD]}"
+              prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+              local commands="add search list stats"
+
+              case "${prev}" in
+                  bib)
+                      COMPREPLY=( $(compgen -W "${commands}" -- ${cur}) )
+                      return 0
+                      ;;
+                  search)
+                      if command -v bib >/dev/null 2>&1; then
+                          local completions=$(bib --complete "${cur}" --complete-context "search-title" 2>/dev/null | cut -d: -f1)
+                          COMPREPLY=( $(compgen -W "${completions}" -- ${cur}) )
+                      fi
+                      return 0
+                      ;;
+              esac
+          }
+
+          complete -F _bib bib
+          EOF
+
+          # Generate fish completion
+          cat > completions/bib.fish << 'EOF'
+          # Fish completion for bib
+
+          complete -c bib -f
+
+          # Main commands
+          complete -c bib -n "__fish_use_subcommand" -a "add" -d "Add new reference from URL or PDF"
+          complete -c bib -n "__fish_use_subcommand" -a "search" -d "Search papers using fuzzy matching"
+          complete -c bib -n "__fish_use_subcommand" -a "list" -d "List all papers in the database"
+          complete -c bib -n "__fish_use_subcommand" -a "stats" -d "Show database statistics"
+
+          # Search dynamic completions
+          complete -c bib -n "__fish_seen_subcommand_from search" \
+              -a "(bib --complete (commandline -ct) --complete-context search-title 2>/dev/null | string replace ':' \t)"
+          EOF
+
+      - name: Create tarball
+        run: |
+          # Create a directory for the archive
+          mkdir -p dist/${{ env.PROJECT_NAME }}
+
+          # Copy binary
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            cp target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }} dist/${{ env.PROJECT_NAME }}/
+          else
+            cp target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }} dist/${{ env.PROJECT_NAME }}/
+          fi
+
+          # Copy completions
+          cp -r completions dist/${{ env.PROJECT_NAME }}/
+
+          # Copy README and LICENSE if they exist
+          [ -f README.md ] && cp README.md dist/${{ env.PROJECT_NAME }}/
+          [ -f LICENSE ] && cp LICENSE dist/${{ env.PROJECT_NAME }}/
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md dist/${{ env.PROJECT_NAME }}/
+
+          # Create tarball
+          cd dist
+          tar -czf ${{ matrix.asset_name }}.tar.gz ${{ env.PROJECT_NAME }}
+
+          # Calculate SHA256
+          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+            sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+          else
+            shasum -a 256 ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+          fi
+
+          echo "SHA256=$(cat ${{ matrix.asset_name }}.tar.gz.sha256 | awk '{print $1}')" >> $GITHUB_ENV
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            dist/${{ matrix.asset_name }}.tar.gz
+            dist/${{ matrix.asset_name }}.tar.gz.sha256
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/bib-x86_64-apple-darwin/*.tar.gz
+            artifacts/bib-aarch64-apple-darwin/*.tar.gz
+            artifacts/bib-x86_64-linux/*.tar.gz
+          body: |
+            # Bib ${{ github.ref_name }}
+
+            Academic paper manager with automatic BibTeX extraction and fuzzy search.
+
+            ## Installation
+
+            ### Homebrew (macOS/Linux)
+            ```bash
+            brew install yourusername/taps/bib
+            ```
+
+            ### Direct Download
+            Download the appropriate binary for your system from the assets below.
+
+            ## Features
+            - 📚 Smart paper import from arXiv, URLs, or local PDFs
+            - 🤖 Automatic BibTeX extraction using AI
+            - 🔍 Fuzzy search with shell completions
+            - 📦 SQLite storage with deduplication
+
+            ## Changes
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew-tap:
+    name: Update Homebrew Tap
+    needs: create-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Calculate SHA256 checksums
+        id: checksums
+        run: |
+          # Get SHA256 for each platform
+          SHA_DARWIN_X86=$(cat artifacts/bib-x86_64-apple-darwin/bib-x86_64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
+          SHA_DARWIN_ARM=$(cat artifacts/bib-aarch64-apple-darwin/bib-aarch64-apple-darwin.tar.gz.sha256 | awk '{print $1}')
+          SHA_LINUX_X86=$(cat artifacts/bib-x86_64-linux/bib-x86_64-linux.tar.gz.sha256 | awk '{print $1}')
+
+          echo "sha_darwin_x86=$SHA_DARWIN_X86" >> $GITHUB_OUTPUT
+          echo "sha_darwin_arm=$SHA_DARWIN_ARM" >> $GITHUB_OUTPUT
+          echo "sha_linux_x86=$SHA_LINUX_X86" >> $GITHUB_OUTPUT
+
+          # Debug output
+          echo "macOS Intel SHA256: $SHA_DARWIN_X86"
+          echo "macOS ARM SHA256: $SHA_DARWIN_ARM"
+          echo "Linux x86_64 SHA256: $SHA_LINUX_X86"
+
+      - name: Generate Homebrew Formula
+        run: |
+          VERSION=${{ needs.create-release.outputs.version }}
+          SHA_DARWIN_X86=${{ steps.checksums.outputs.sha_darwin_x86 }}
+          SHA_DARWIN_ARM=${{ steps.checksums.outputs.sha_darwin_arm }}
+          SHA_LINUX_X86=${{ steps.checksums.outputs.sha_linux_x86 }}
+
+          cat > bib.rb << EOF
+          class Bib < Formula
+            desc "Academic paper manager with automatic BibTeX extraction and fuzzy search"
+            homepage "https://github.com/${{ github.repository }}"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.intel?
+                url "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/bib-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_DARWIN_X86}"
+              elsif Hardware::CPU.arm?
+                url "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/bib-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_DARWIN_ARM}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.intel?
+                url "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/bib-x86_64-linux.tar.gz"
+                sha256 "${SHA_LINUX_X86}"
+              end
+            end
+
+            depends_on "sqlite"
+
+            def install
+              # Install binary
+              bin.install "bib"
+              
+              # Install shell completions
+              bash_completion.install "completions/bib.bash"
+              zsh_completion.install "completions/_bib"
+              fish_completion.install "completions/bib.fish"
+              
+              # Install man page if it exists
+              man1.install "bib.1" if File.exist?("bib.1")
+              
+              # Install documentation
+              doc.install "README.md" if File.exist?("README.md")
+              doc.install "CHANGELOG.md" if File.exist?("CHANGELOG.md")
+            end
+
+            def post_install
+              # Create config directory
+              (var/"bib").mkpath
+            end
+
+            def caveats
+              <<~EOS
+                Shell completions have been installed:
+                  Bash: #{HOMEBREW_PREFIX}/etc/bash_completion.d
+                  Zsh:  #{HOMEBREW_PREFIX}/share/zsh/site-functions
+                  Fish: #{HOMEBREW_PREFIX}/share/fish/vendor_completions.d
+
+                For zsh, you may need to add the following to your ~/.zshrc:
+                  if type brew &>/dev/null; then
+                    FPATH="$(brew --prefix)/share/zsh/site-functions:\${FPATH}"
+                    autoload -Uz compinit && compinit
+                  fi
+
+                To use the AI-powered BibTeX extraction, set your Gemini API key:
+                  export GEMINI_API_KEY="your-api-key"
+
+                Get a free API key at: https://makersuite.google.com/app/apikey
+
+                Database will be stored at: ~/.papers/papers.db
+              EOS
+            end
+
+            test do
+              # Test that the binary runs
+              system "#{bin}/bib", "--version"
+              
+              # Test help command
+              assert_match "Academic paper manager", shell_output("#{bin}/bib --help")
+              
+              # Test stats command (should work even with empty database)
+              assert_match "Total papers", shell_output("#{bin}/bib stats")
+            end
+          end
+          EOF
+
+          echo "Generated Homebrew formula:"
+          cat bib.rb
+
+      - name: Checkout Homebrew Taps Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.HOMEBREW_TAP_REPO }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: homebrew-taps
+
+      - name: Update Formula in Taps Repository
+        run: |
+          # Copy the formula to the Formula directory
+          mkdir -p homebrew-taps/Formula
+          cp bib.rb homebrew-taps/Formula/
+
+          cd homebrew-taps
+
+          # Configure git
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          # Commit and push
+          git add Formula/bib.rb
+          git commit -m "Update bib to version ${{ needs.create-release.outputs.version }}" || echo "No changes to commit"
+          git push
+
+      - name: Test Installation Instructions
+        run: |
+          echo "🎉 Homebrew tap updated successfully!"
+          echo ""
+          echo "Users can now install bib with:"
+          echo "  brew tap ${{ env.HOMEBREW_TAP_REPO }}"
+          echo "  brew install bib"
+          echo ""
+          echo "Or in one command:"
+          echo "  brew install ${{ env.HOMEBREW_TAP_REPO }}/bib"
+          echo ""
+          echo "Shell completions are automatically installed!"
