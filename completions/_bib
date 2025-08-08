@@ -1,0 +1,69 @@
+#compdef bib
+
+_bib() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    _arguments -C \
+        '1: :->command' \
+        '*:: :->args'
+
+    case $state in
+        command)
+            local commands=(
+                'add:Add new reference from URL or PDF'
+                'search:Search papers using fuzzy matching'
+                'list:List all papers in the database'
+                'stats:Show database statistics'
+            )
+            _describe 'command' commands
+            ;;
+        args)
+            case $line[1] in
+                add)
+                    _arguments \
+                        '1:url:_files' \
+                        '(-n --notes)'{-n,--notes}'[Optional notes]:notes:' \
+                        '(-h --help)'{-h,--help}'[Show help]'
+                    ;;
+                search)
+                    _arguments -C \
+                        '(-a --author)'{-a,--author}'[Search by author instead of title]' \
+                        '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
+                        '(-h --help)'{-h,--help}'[Show help]' \
+                        '*:query:->search_query'
+                    
+                    case $state in
+                        search_query)
+                            local context="search-title"
+                            if [[ ${opt_args[-a]} == 1 ]] || [[ ${opt_args[--author]} == 1 ]]; then
+                                context="search-author"
+                            fi
+                            
+                            local current_word="${words[CURRENT]}"
+                            local completions
+                            completions=(${(f)"$(bib --complete "$current_word" --complete-context "$context" 2>/dev/null)"})
+                            
+                            if [[ ${#completions[@]} -gt 0 ]]; then
+                                _describe 'papers' completions
+                            else
+                                _message 'search query'
+                            fi
+                            ;;
+                    esac
+                    ;;
+                list)
+                    _arguments \
+                        '(-l --limit)'{-l,--limit}'[Maximum papers to display]:limit:' \
+                        '(-h --help)'{-h,--help}'[Show help]'
+                    ;;
+                stats)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[Show help]'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_bib "$@"
