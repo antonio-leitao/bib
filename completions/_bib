@@ -1,5 +1,32 @@
 #compdef bib
 
+# Helper function to get completions from bib
+_bib_get_completions() {
+    local context="$1"
+    local query="$2"
+    
+    # Call bib and get completions
+    local IFS=$'\n'
+    local -a completions
+    completions=($(bib --complete "$query" --complete-context "$context" 2>/dev/null))
+    
+    if (( ${#completions[@]} == 0 )); then
+        return 1
+    fi
+    
+    # Format completions for _describe
+    local -a formatted_completions
+    local item
+    for item in $completions; do
+        # Keep the value:description format that _describe expects
+        formatted_completions+=("$item")
+    done
+    
+    # Use _describe to show the completions
+    _describe -U -t papers 'papers' formatted_completions
+    return 0
+}
+
 _bib() {
     local curcontext="$curcontext" state line
     typeset -A opt_args
@@ -21,47 +48,55 @@ _bib() {
         args)
             case $line[1] in
                 add)
-                    _files
+                    _arguments \
+                        '1:url:_files' \
+                        '(-n --notes)'{-n,--notes}'[Optional notes]:notes:' \
+                        '(-h --help)'{-h,--help}'[Show help]'
                     ;;
                 search)
-                    _arguments \
+                    # Check for author flag
+                    local context="search-title"
+                    if (( ${words[(I)-a]} )) || (( ${words[(I)--author]} )); then
+                        context="search-author"
+                    fi
+                    
+                    _arguments -C \
                         '(-a --author)'{-a,--author}'[Search by author instead of title]' \
-                        '(-n --limit)'{-n,--limit}'[Maximum results]:limit:((5 10 20 50 100))' \
+                        '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
                         '(-h --help)'{-h,--help}'[Show help]' \
-                        '*:query:_bib_complete_search'
+                        '*: :_bib_complete_search'
                     ;;
                 list)
                     _arguments \
-                        '(-l --limit)'{-l,--limit}'[Maximum papers to display]:limit:((5 10 20 50 100))' \
+                        '(-l --limit)'{-l,--limit}'[Maximum papers to display]:limit:' \
                         '(-h --help)'{-h,--help}'[Show help]'
                     ;;
                 stats)
-                    _arguments '(-h --help)'{-h,--help}'[Show help]'
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[Show help]'
                     ;;
             esac
             ;;
     esac
 }
 
+# Completion function for search queries
 _bib_complete_search() {
+    # Determine context
     local context="search-title"
-    if (( ${words[(I)--author]} )) || (( ${words[(I)-a]} )); then
+    if (( ${words[(I)-a]} )) || (( ${words[(I)--author]} )); then
         context="search-author"
     fi
-
-    # === THE PORTABLE FIX IS HERE ===
-    # 1. Dynamically find the full path to the 'bib' command.
-    #    `whence` is the Zsh-native way to do this.
-    local bib_cmd
-    bib_cmd=$(whence bib)
-
-    # 2. If 'bib' isn't found, exit gracefully.
-    if [[ -z "$bib_cmd" ]]; then
-        return 1
-    fi
     
-    # 3. Use the found path to call the command.
-    _wanted papers 'papers' "$bib_cmd" --complete "$PREFIX" --complete-context "$context"
+    # Get what user has typed so far
+    # This is the KEY: use $PREFIX for partial word completion
+    local query="$PREFIX"
+    
+    # Get and display completions
+    _bib_get_completions "$context" "$query"
+    
+    # Never fall back to file completion
+    return 0
 }
 
 _bib "$@"
