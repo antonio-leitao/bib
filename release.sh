@@ -420,7 +420,7 @@ See CHANGELOG.md for details."
 
 # Push changes and tag
 echo "10. Pushing to remote..."
-git push origin main
+git push origin master
 git push origin "v$NEW_VERSION"
 
 echo
