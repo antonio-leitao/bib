@@ -4,22 +4,32 @@
 # It is self-contained and does not require the user to have global fuzzy-matching
 # settings in their .zshrc.
 
-# --- Style Definitions Specific to 'bib' ---
-# We define these styles to apply ONLY to the 'bib' command, ensuring a
-# rich experience without altering the user's global shell behavior.
-
-# 1. Enable the interactive menu selection UI.
+# --- Style Definitions (unchanged) ---
 zstyle ':completion:*:*:bib:*:*' menu select
-
-# 2. Group completions and provide a descriptive header.
 zstyle ':completion:*:*:bib:*:*' group-name ''
-
-# 3. Define the fuzzy matching rules for Zsh to use.
 zstyle ':completion:*:*:bib:*:*' matcher-list 'm:{a-z}={A-Z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
-#    Breakdown:
-#    'm:{a-z}={A-Z}'    -> Case-insensitive matching (e.g., 'foo' matches 'FooBar').
-#    'r:|[._-]=* r:|=*' -> Allow matching on either side of a separator (e.g., 'fb' matches 'foo-bar').
-#    'l:|=* r:|=*'      -> Allow matching anywhere, not just at the start of a word.
+
+# --- Helper function for 'search' completions ---
+# This function is called by _arguments to generate the list of possible papers.
+# Putting the logic here avoids all the quoting issues.
+_bib_get_search_results() {
+    local context="search-title"
+    local description="titles"
+
+    # Check if the user has passed the --author flag
+    if (( ${words[(I)-a]} || ${words[(I)--author]} )); then
+        context="search-author"
+        description="authors"
+    fi
+
+    # The most robust way to create an array from command output.
+    # It splits ONLY on newlines, preserving spaces within titles.
+    local -a completions
+    completions=( ${(f)"$(bib --complete '' --complete-context "$context")"} )
+
+    # Use _values to present the completions to the user.
+    _values "$description" "$completions[@]"
+}
 
 
 # --- Main Completion Logic ---
@@ -27,14 +37,12 @@ _bib() {
     local curcontext="$curcontext" state line
     typeset -A opt_args
 
-    # This defines the main structure: a command followed by arguments.
     _arguments -C \
         '1: :->command' \
         '*:: :->args'
 
     case $state in
         command)
-            # Provide completions for the first-level subcommands.
             local -a commands
             commands=(
                 'add:Add new reference from URL or PDF'
@@ -45,10 +53,8 @@ _bib() {
             _describe 'command' commands
             ;;
         args)
-            # Handle completions for arguments of a specific subcommand.
             case $line[1] in
                 add)
-                    # Standard argument and file completion for 'add'.
                     _arguments \
                         '(-n --notes)'{-n,--notes}'[Optional notes]:notes:' \
                         '(-h --help)'{-h,--help}'[Show help]' \
@@ -56,21 +62,13 @@ _bib() {
                     ;;
 
                 search)
-                    # --- THE CORE OF THE NEW LOGIC ---
-                    # Determine the search context based on flags present on the line.
-                    local context="search-title"
-                    local description="titles"
-                    if (( ${words[(I)-a]} || ${words[(I)--author]} )); then
-                        context="search-author"
-                        description="authors"
-                    fi
-
-                    # Define arguments for 'search'. The magic is in the last line.
+                    # The _arguments call is now much cleaner.
+                    # For the positional argument (*), it simply calls our helper function.
                     _arguments \
                         '(-a --author)'{-a,--author}'[Search by author instead of title]' \
                         '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
                         '(-h --help)'{-h,--help}'[Show help]' \
-                        "*:Search for $description:_values '$description' ( \$(bib --complete '' --complete-context '$context') )"
+                        '*:Search query:_bib_get_search_results'
                     ;;
 
                 list)
