@@ -165,6 +165,6 @@ echo "You can monitor the progress at:"
 echo -e "${BLUE}https://github.com/$(git remote get-url origin | sed 's/.*github.com[:\/]\(.*\)\.git/\1/')/actions${NC}"
 echo
 echo "Once complete, users can install with:"
-echo -e "  ${GREEN}brew install yourusername/taps/bib${NC}"
+echo -e "  ${GREEN}brew install antonio-leitao/taps/bib${NC}"
 echo
 echo "Completions will be automatically installed and work immediately!"
