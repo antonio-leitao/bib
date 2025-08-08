@@ -269,7 +269,7 @@ jobs:
             ## Changes
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_RELEASE_TOKEN }}
 
   update-homebrew-tap:
     name: Update Homebrew Tap
@@ -399,7 +399,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.HOMEBREW_TAP_REPO }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.HOMEBREW_RELEASE_TOKEN }}
           path: homebrew-taps
 
       - name: Update Formula in Taps Repository
