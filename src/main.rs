@@ -108,17 +108,28 @@ fn get_db_path() -> PathBuf {
 async fn main() {
     let cli = Cli::parse();
 
-    // Initialize the database
+    // Initialize the database for normal operations
     let db_path = get_db_path();
+
+    // Handle completion mode FIRST, before any other logic
+    if let Some(query) = cli.complete {
+        // Try to open the database, but if it doesn't exist, just return empty
+        let store = match PaperStore::new(&db_path) {
+            Ok(store) => store,
+            Err(_) => {
+                // No database yet - this is fine, just no completions
+                // Output nothing (not even an error) so shell completion works correctly
+                return;
+            }
+        };
+
+        handle_completion(&store, &query, cli.complete_context);
+        return;
+    }
 
     let mut store = match PaperStore::new(&db_path) {
         Ok(store) => store,
         Err(e) => {
-            // Don't error on completion mode if DB doesn't exist yet
-            if cli.complete.is_some() {
-                // Just return empty completions
-                return;
-            }
             error_message(&format!(
                 "Failed to initialize database at {}: {}",
                 db_path.display(),
@@ -127,12 +138,6 @@ async fn main() {
             process::exit(1);
         }
     };
-
-    // Handle completion mode
-    if let Some(query) = cli.complete {
-        handle_completion(&store, &query, cli.complete_context);
-        return;
-    }
 
     // Regular command mode
     let Some(command) = cli.command else {
@@ -185,7 +190,8 @@ fn handle_completion(store: &PaperStore, query: &str, context: Option<String>) {
             completion::output_completions_zsh(completions);
         }
         Err(_) => {
-            // Silent fail for completions
+            // Output nothing on error - this prevents shell from falling back to files
+            // This is the correct behavior for completion scripts
         }
     }
 }

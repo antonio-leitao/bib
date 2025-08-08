@@ -3,7 +3,6 @@
 use crate::base::Paper;
 use crate::fuzzy::{FuzzyConfig, FuzzySearcher, SearchableItem};
 use crate::store::{PaperStore, StoreError};
-use std::io::{self, Write};
 
 /// Different completion contexts
 #[derive(Debug, Clone, PartialEq)]
@@ -68,16 +67,15 @@ impl<'a> CompletionHandler<'a> {
         let searcher = FuzzySearcher::new(config);
         let results = searcher.search(query, items);
 
-        // Format for zsh completion
+        // Format for shell completion - value:description format
         Ok(results
             .into_iter()
             .map(|r| {
-                format!(
-                    "{}:{} - {}",
-                    r.completion_value(),
-                    r.item.context.unwrap_or_default(),
-                    r.item.id
-                )
+                // Create a clean title for the value part (what gets inserted)
+                let title = r.item.primary.clone();
+                // Create description with author and year
+                let description = r.item.context.unwrap_or_default();
+                format!("{}:{}", title, description)
             })
             .collect())
     }

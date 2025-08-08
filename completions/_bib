@@ -4,7 +4,10 @@ _bib() {
     local curcontext="$curcontext" state line
     typeset -A opt_args
 
+    # First, handle the hidden completion flags
     _arguments -C \
+        '--complete[Hidden completion mode]:query:' \
+        '--complete-context[Hidden completion context]:context:' \
         '1: :->command' \
         '*:: :->args'
 
@@ -27,30 +30,53 @@ _bib() {
                         '(-h --help)'{-h,--help}'[Show help]'
                     ;;
                 search)
+                    # First handle the flags
                     _arguments -C \
                         '(-a --author)'{-a,--author}'[Search by author instead of title]' \
                         '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
                         '(-h --help)'{-h,--help}'[Show help]' \
                         '*:query:->search_query'
                     
-                    case $state in
-                        search_query)
-                            local context="search-title"
-                            if [[ ${opt_args[-a]} == 1 ]] || [[ ${opt_args[--author]} == 1 ]]; then
+                    if [[ "$state" == "search_query" ]]; then
+                        # Determine context based on flags
+                        local context="search-title"
+                        local i
+                        for (( i=2; i <= ${#words[@]}; i++ )); do
+                            if [[ "${words[$i]}" == "-a" ]] || [[ "${words[$i]}" == "--author" ]]; then
                                 context="search-author"
+                                break
                             fi
+                        done
+                        
+                        # Get current input
+                        local current_input="${words[CURRENT]}"
+                        
+                        # Get completions from bib
+                        local IFS=$'\n'
+                        local -a completions
+                        completions=($(bib --complete "$current_input" --complete-context "$context" 2>/dev/null))
+                        
+                        if [[ ${#completions[@]} -gt 0 ]]; then
+                            # Parse completions and descriptions
+                            local -a items
+                            local comp
+                            for comp in $completions; do
+                                # Split on first colon to separate value from description
+                                if [[ "$comp" == *:* ]]; then
+                                    local value="${comp%%:*}"
+                                    local desc="${comp#*:}"
+                                    items+=("${value//:/\\:}:${desc//:/\\:}")
+                                else
+                                    items+=("${comp//:/\\:}")
+                                fi
+                            done
                             
-                            local current_word="${words[CURRENT]}"
-                            local completions
-                            completions=(${(f)"$(bib --complete "$current_word" --complete-context "$context" 2>/dev/null)"})
-                            
-                            if [[ ${#completions[@]} -gt 0 ]]; then
-                                _describe 'papers' completions
-                            else
-                                _message 'search query'
-                            fi
-                            ;;
-                    esac
+                            _describe -t papers 'papers' items
+                        fi
+                        
+                        # Don't fall back to file completion
+                        return 0
+                    fi
                     ;;
                 list)
                     _arguments \
