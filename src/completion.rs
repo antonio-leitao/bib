@@ -1,6 +1,3 @@
-// src/completion.rs
-
-use crate::base::Paper;
 use crate::fuzzy::{FuzzyConfig, FuzzySearcher, SearchableItem};
 use crate::store::{PaperStore, StoreError};
 
@@ -176,25 +173,5 @@ impl<'a> CompletionHandler<'a> {
 pub fn output_completions_zsh(completions: Vec<String>) {
     for completion in completions {
         println!("{}", completion);
-    }
-}
-
-/// Output completions in bash format
-pub fn output_completions_bash(completions: Vec<String>) {
-    for completion in completions {
-        // For bash, we typically just output the completion value without description
-        let value = completion.split(':').next().unwrap_or(&completion);
-        println!("{}", value);
-    }
-}
-
-/// Output completions in fish format
-pub fn output_completions_fish(completions: Vec<String>) {
-    for completion in completions {
-        if let Some((value, description)) = completion.split_once(':') {
-            println!("{}\t{}", value, description);
-        } else {
-            println!("{}", completion);
-        }
     }
 }

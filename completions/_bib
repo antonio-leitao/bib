@@ -70,7 +70,7 @@ _bib() {
                         '(-a --author)'{-a,--author}'[Search by author instead of title]' \
                         '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
                         '(-h --help)'{-h,--help}'[Show help]' \
-                        "*:Search for $description:_values '$description' \$(bib --complete '' --complete-context '$context')"
+                        "*:Search for $description:_values '$description' ( \$(bib --complete '' --complete-context '$context') )"
                     ;;
 
                 list)

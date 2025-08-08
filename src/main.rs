@@ -111,22 +111,6 @@ async fn main() {
     // Initialize the database for normal operations
     let db_path = get_db_path();
 
-    // Handle completion mode FIRST, before any other logic
-    if let Some(query) = cli.complete {
-        // Try to open the database, but if it doesn't exist, just return empty
-        let store = match PaperStore::new(&db_path) {
-            Ok(store) => store,
-            Err(_) => {
-                // No database yet - this is fine, just no completions
-                // Output nothing (not even an error) so shell completion works correctly
-                return;
-            }
-        };
-
-        handle_completion(&store, &query, cli.complete_context);
-        return;
-    }
-
     let mut store = match PaperStore::new(&db_path) {
         Ok(store) => store,
         Err(e) => {
@@ -139,14 +123,18 @@ async fn main() {
         }
     };
 
+    // Handle completion mode FIRST, before any other logic
+    if let Some(query) = cli.complete {
+        handle_completion(&store, &query, cli.complete_context);
+        return;
+    }
+
     // Regular command mode
     let Some(command) = cli.command else {
         // No command provided, show help
         println!("No command provided. Use --help for usage information.");
         return;
     };
-
-    blog!("Database", "Using {}", db_path.display());
 
     let result = match command {
         Commands::Add { url, notes } => commands::add::add(url, notes, &mut store)
