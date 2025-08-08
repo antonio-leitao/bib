@@ -4,31 +4,33 @@
 # It is self-contained and does not require the user to have global fuzzy-matching
 # settings in their .zshrc.
 
-# --- Style Definitions (unchanged) ---
+# --- Style Definitions Specific to 'bib' ---
+
+# 1. Enable the interactive menu selection UI.
 zstyle ':completion:*:*:bib:*:*' menu select
+
+# 2. Group completions and provide a descriptive header.
 zstyle ':completion:*:*:bib:*:*' group-name ''
-zstyle ':completion:*:*:bib:*:*' matcher-list 'm:{a-z}={A-Z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+
+# 3. Define a powerful, fuzzy, case-insensitive matching rule set.
+zstyle ':completion:*:*:bib:*:*' matcher-list 'm:{a-z}={A-Z}' 'm:{a-z}={A-Z} l:|=* r:|[._-]=*' 'm:{a-z}={A-Z} r:|[._-]=* l:|=*'
+
+# 4. Do not add a trailing space or equal sign to completions.
+zstyle ':completion:*:*:bib:*:*' S ''
+
 
 # --- Helper function for 'search' completions ---
-# This function is called by _arguments to generate the list of possible papers.
-# Putting the logic here avoids all the quoting issues.
 _bib_get_search_results() {
     local context="search-title"
-    local description="titles"
-
-    # Check if the user has passed the --author flag
     if (( ${words[(I)-a]} || ${words[(I)--author]} )); then
         context="search-author"
-        description="authors"
     fi
 
-    # The most robust way to create an array from command output.
-    # It splits ONLY on newlines, preserving spaces within titles.
     local -a completions
     completions=( ${(f)"$(bib --complete '' --complete-context "$context")"} )
 
-    # Use _values to present the completions to the user.
-    _values "$description" "$completions[@]"
+    # Use the fundamental 'compadd' to ensure our custom styles are applied correctly.
+    compadd -a completions
 }
 
 
@@ -62,8 +64,6 @@ _bib() {
                     ;;
 
                 search)
-                    # The _arguments call is now much cleaner.
-                    # For the positional argument (*), it simply calls our helper function.
                     _arguments \
                         '(-a --author)'{-a,--author}'[Search by author instead of title]' \
                         '(-n --limit)'{-n,--limit}'[Maximum results]:limit:' \
