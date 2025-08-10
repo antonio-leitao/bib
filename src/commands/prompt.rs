@@ -1,6 +1,7 @@
 use crate::base::Paper;
 use crate::store::{PaperStore, StoreError};
 use std::io::{self, Stdout, Write};
+use std::time::{Duration, Instant};
 use sublime_fuzzy::best_match;
 use termion::color;
 use termion::event::Key;
@@ -32,6 +33,25 @@ impl Mode {
     }
 }
 
+// Message state for displaying feedback and prompts
+enum MessageState {
+    Flash {
+        text: String,
+        line_index: usize,
+        expires_at: Instant,
+    },
+    Prompt {
+        text: String,
+        line_index: usize,
+        action: PendingAction,
+    },
+}
+
+// Actions that require confirmation
+enum PendingAction {
+    Delete(usize), // paper index in filtered results
+}
+
 // Message enum for updates (Elm-like architecture)
 enum Message {
     ModeToggle,
@@ -39,12 +59,13 @@ enum Message {
     SearchBackspace,
     BrowseUp,
     BrowseDown,
+    YankBibtex,
+    DeletePaper,
+    OpenPaper(bool), // bool flag for alt mode
+    ConfirmPrompt,
+    CancelPrompt,
+    ClearMessage,
     Quit,
-    // Future messages can be added here:
-    // SelectPaper,
-    // OpenPaper,
-    // DeletePaper,
-    // etc.
 }
 
 // Main UI struct that holds all state
@@ -56,6 +77,7 @@ struct SearchUI<'a> {
     limit: usize,
     stdout: RawTerminal<Stdout>,
     store: &'a PaperStore,
+    message: Option<MessageState>,
 }
 
 impl<'a> SearchUI<'a> {
@@ -75,6 +97,7 @@ impl<'a> SearchUI<'a> {
             limit,
             stdout,
             store,
+            message: None,
         };
 
         // Initial render
@@ -88,6 +111,14 @@ impl<'a> SearchUI<'a> {
         let stdin = io::stdin();
 
         for key in stdin.keys() {
+            // Check for expired flash messages
+            if let Some(MessageState::Flash { expires_at, .. }) = &self.message {
+                if Instant::now() >= *expires_at {
+                    self.message = None;
+                    self.view()?;
+                }
+            }
+
             match self.handle_key(key.unwrap()) {
                 Some(Message::Quit) => break,
                 Some(msg) => {
@@ -103,11 +134,28 @@ impl<'a> SearchUI<'a> {
 
     // Convert key press to message
     fn handle_key(&self, key: Key) -> Option<Message> {
-        // First check for universal commands (work in any mode)
+        // First check if we're in a prompt
+        if let Some(MessageState::Prompt { .. }) = &self.message {
+            return match key {
+                Key::Char('y') | Key::Char('Y') => Some(Message::ConfirmPrompt),
+                Key::Char('n') | Key::Char('N') | Key::Esc => Some(Message::CancelPrompt),
+                _ => None, // Ignore other keys during prompt
+            };
+        }
+
+        // Universal commands (work in any mode)
         match key {
-            Key::Char('\n') | Key::Esc | Key::Ctrl('c') => return Some(Message::Quit),
+            Key::Esc | Key::Ctrl('c') => return Some(Message::Quit),
             Key::Char('\t') | Key::Char('\\') => return Some(Message::ModeToggle),
             _ => {}
+        }
+
+        // Handle Enter based on mode
+        if let Key::Char('\n') = key {
+            return match self.mode {
+                Mode::Search => Some(Message::ModeToggle), // Enter toggles to Browse in Search mode
+                Mode::Browse => Some(Message::OpenPaper(false)), // Enter opens paper in Browse mode
+            };
         }
 
         // Then delegate to mode-specific handlers
@@ -131,23 +179,32 @@ impl<'a> SearchUI<'a> {
         match key {
             Key::Char('j') | Key::Down => Some(Message::BrowseDown),
             Key::Char('k') | Key::Up => Some(Message::BrowseUp),
+            Key::Char('y') => Some(Message::YankBibtex),
+            Key::Char('d') => Some(Message::DeletePaper),
+            Key::Char('o') => Some(Message::OpenPaper(true)), // Alt open
+            Key::Char('q') => Some(Message::Quit),            // Quick quit in browse mode
             // Future browse commands can be added here:
             // Key::Char(' ') => Some(Message::ToggleSelection),
-            // Key::Char('o') => Some(Message::OpenPaper),
-            // Key::Char('d') => Some(Message::DeletePaper),
-            // Key::Char('y') => Some(Message::CopyPaper),
             _ => None,
         }
     }
 
     // Update state based on message
     fn update(&mut self, msg: Message) -> Result<(), SearchError> {
+        // Check if we should clear expired flash messages
+        if let Some(MessageState::Flash { expires_at, .. }) = &self.message {
+            if Instant::now() >= *expires_at {
+                self.message = None;
+            }
+        }
+
         match msg {
             Message::ModeToggle => {
                 self.mode = self.mode.toggle();
                 if self.mode == Mode::Browse {
                     self.cursor_pos = 0;
                 }
+                self.message = None; // Clear any messages on mode switch
             }
             Message::SearchInput(ch) => {
                 self.query.push(ch);
@@ -166,10 +223,125 @@ impl<'a> SearchUI<'a> {
                     self.cursor_pos += 1;
                 }
             }
+            Message::YankBibtex => {
+                if let Some(paper) = self.get_selected_paper() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        if clipboard.set_text(&paper.bibtex).is_ok() {
+                            self.message = Some(MessageState::Flash {
+                                text: "BibTeX copied!".to_string(),
+                                line_index: self.cursor_pos,
+                                expires_at: Instant::now() + Duration::from_secs(2),
+                            });
+                        } else {
+                            self.message = Some(MessageState::Flash {
+                                text: "Failed to copy!".to_string(),
+                                line_index: self.cursor_pos,
+                                expires_at: Instant::now() + Duration::from_secs(2),
+                            });
+                        }
+                    }
+                }
+            }
+            Message::DeletePaper => {
+                if self.get_selected_paper().is_some() {
+                    self.message = Some(MessageState::Prompt {
+                        text: "Delete this paper? [Y/n]".to_string(),
+                        line_index: self.cursor_pos,
+                        action: PendingAction::Delete(self.cursor_pos),
+                    });
+                }
+            }
+            Message::OpenPaper(alt_mode) => {
+                if let Some(paper) = self.get_selected_paper() {
+                    self.dummy_open_paper(paper, alt_mode);
+
+                    let message_text = if alt_mode {
+                        "Opening (alt)...".to_string()
+                    } else {
+                        "Opening...".to_string()
+                    };
+
+                    self.message = Some(MessageState::Flash {
+                        text: message_text,
+                        line_index: self.cursor_pos,
+                        expires_at: Instant::now() + Duration::from_millis(1500),
+                    });
+                }
+            }
+            Message::ConfirmPrompt => {
+                if let Some(MessageState::Prompt { action, .. }) = &self.message {
+                    match action {
+                        PendingAction::Delete(index) => {
+                            // Get the paper to delete
+                            if let Some(paper) = self.get_filtered_papers().get(*index) {
+                                let paper_id = paper.id.clone();
+
+                                // TODO: Actually delete from backend with something like:
+                                // match self.store.delete(&paper_id) {
+                                //     Ok(_) => {
+                                //         self.papers.retain(|p| p.id != paper_id);
+                                //         self.message = Some(MessageState::Flash {
+                                //             text: "Paper deleted!".to_string(),
+                                //             line_index: self.cursor_pos,
+                                //             expires_at: Instant::now() + Duration::from_secs(2),
+                                //         });
+                                //     }
+                                //     Err(e) => {
+                                //         self.message = Some(MessageState::Flash {
+                                //             text: format!("Failed: {}", e),
+                                //             line_index: self.cursor_pos,
+                                //             expires_at: Instant::now() + Duration::from_secs(3),
+                                //         });
+                                //     }
+                                // }
+
+                                // For now, dummy delete - just remove from local state
+                                self.papers.retain(|p| p.id != paper_id);
+
+                                // Adjust cursor if needed
+                                let new_results_len = self.get_filtered_papers().len();
+                                if self.cursor_pos >= new_results_len && new_results_len > 0 {
+                                    self.cursor_pos = new_results_len - 1;
+                                }
+
+                                // Show confirmation
+                                self.message = Some(MessageState::Flash {
+                                    text: "Paper deleted!".to_string(),
+                                    line_index: self.cursor_pos,
+                                    expires_at: Instant::now() + Duration::from_secs(2),
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    self.message = None;
+                }
+            }
+            Message::CancelPrompt => {
+                self.message = None;
+            }
+            Message::ClearMessage => {
+                self.message = None;
+            }
             Message::Quit => {} // Handled in run()
-                                // Future message handlers can be added here
         }
         Ok(())
+    }
+
+    // Dummy open function for papers
+    fn dummy_open_paper(&self, paper: &Paper, alt_mode: bool) {
+        // TODO: Implement actual open functionality
+        // For example:
+        // if alt_mode {
+        //     // Open in alternative viewer/browser
+        //     open_in_browser(&paper.url);
+        // } else {
+        //     // Open in default PDF viewer
+        //     open_pdf(&paper.path);
+        // }
+
+        // For now, just print to stderr so it doesn't mess up the TUI
+        eprintln!("Opening paper '{}' (alt_mode: {})", paper.id, alt_mode);
     }
 
     // Render the UI
@@ -203,15 +375,48 @@ impl<'a> SearchUI<'a> {
         for (i, display) in result_displays.iter().enumerate() {
             write!(self.stdout, "{}", termion::clear::CurrentLine)?;
 
-            // Show cursor (*) in browse mode
-            if self.mode == Mode::Browse && i == self.cursor_pos {
-                write!(self.stdout, "* ")?;
-            } else {
-                write!(self.stdout, "  ")?;
-            }
+            // Check if this line has a message to display
+            let has_message = match &self.message {
+                Some(MessageState::Flash {
+                    line_index, text, ..
+                })
+                | Some(MessageState::Prompt {
+                    line_index, text, ..
+                }) => {
+                    if *line_index == i {
+                        // Display the message
+                        if matches!(self.message, Some(MessageState::Prompt { .. })) {
+                            // For prompts, replace the entire line
+                            writeln!(self.stdout, "  {}\r", text)?;
+                            true
+                        } else {
+                            // For flash messages, show with checkmark
+                            writeln!(
+                                self.stdout,
+                                "\t✓ {}[{}]{}\r",
+                                color::Fg(color::Green),
+                                text,
+                                color::Fg(color::Reset)
+                            )?;
+                            true
+                        }
+                    } else {
+                        false
+                    }
+                }
+                None => false,
+            };
 
-            write!(self.stdout, "{}", display)?;
-            writeln!(self.stdout, "\r")?;
+            if !has_message {
+                // Normal display
+                if self.mode == Mode::Browse && i == self.cursor_pos {
+                    write!(self.stdout, "* ")?;
+                } else {
+                    write!(self.stdout, "  ")?;
+                }
+                write!(self.stdout, "{}", display)?;
+                writeln!(self.stdout, "\r")?;
+            }
         }
 
         // Print blank lines for remaining slots
@@ -245,8 +450,11 @@ impl<'a> SearchUI<'a> {
         // Show commands based on mode
         write!(self.stdout, "{}", termion::clear::CurrentLine)?;
         let commands = match self.mode {
-            Mode::Search => "Tab: Browse | Esc: Quit | Type to search",
-            Mode::Browse => "Tab: Search | j/↓: Down | k/↑: Up | Esc: Quit",
+            Mode::Search => "Enter/Tab: Browse | Esc: Quit | Type to search",
+            Mode::Browse => match &self.message {
+                Some(MessageState::Prompt { .. }) => "Y: Confirm | N/Esc: Cancel",
+                _ => "Enter/o: Open | Tab: Search | j/k: Nav | y: Copy | d: Delete | q/Esc: Quit",
+            },
         };
         writeln!(self.stdout, "  {}\r", commands)?;
 
@@ -277,8 +485,7 @@ impl<'a> SearchUI<'a> {
         }
     }
 
-    // Get currently selected paper (for future use)
-    #[allow(dead_code)]
+    // Get currently selected paper
     fn get_selected_paper(&self) -> Option<&Paper> {
         if self.mode == Mode::Browse {
             self.get_filtered_papers().get(self.cursor_pos).copied()
