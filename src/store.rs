@@ -1,4 +1,3 @@
-// src/store.rs
 use crate::base::Paper;
 use rusqlite::{params, Connection, Row};
 use std::path::Path;
@@ -27,14 +26,6 @@ impl PaperStore {
         Ok(store)
     }
 
-    /// Create an in-memory database (useful for testing)
-    pub fn in_memory() -> Result<Self, StoreError> {
-        let conn = Connection::open_in_memory()?;
-        let store = PaperStore { conn };
-        store.init_schema()?;
-        Ok(store)
-    }
-
     /// Initialize the database schema
     fn init_schema(&self) -> Result<(), StoreError> {
         self.conn.execute(
@@ -45,21 +36,11 @@ impl PaperStore {
                 year INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 notes TEXT,
+                content TEXT NOT NULL,
                 bibtex TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )",
-            [],
-        )?;
-
-        // Create indexes for common queries
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year)",
-            [],
-        )?;
-
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_papers_key ON papers(key)",
             [],
         )?;
 
@@ -84,6 +65,7 @@ impl PaperStore {
             year: row.get("year")?,
             title: row.get("title")?,
             notes: row.get("notes")?,
+            content: row.get("content")?,
             bibtex: row.get("bibtex")?,
         })
     }
@@ -92,8 +74,8 @@ impl PaperStore {
     pub fn create(&mut self, paper: &Paper) -> Result<(), StoreError> {
         match self.conn.execute(
             "INSERT INTO papers 
-             (id, key, author, year, title, notes, bibtex)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+             (id, key, author, year, title, notes, content, bibtex)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 paper.id.to_string(),
                 paper.key,
@@ -101,6 +83,7 @@ impl PaperStore {
                 paper.year,
                 paper.title,
                 paper.notes,
+                paper.content,
                 paper.bibtex,
             ],
         ) {
@@ -117,29 +100,11 @@ impl PaperStore {
     /// Get a paper by its ID
     pub fn get_by_id(&self, id: u128) -> Result<Option<Paper>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, key, author, year, title, notes, bibtex
+            "SELECT id, key, author, year, title, notes, content, bibtex
              FROM papers WHERE id = ?1",
         )?;
 
         let mut rows = stmt.query_map([id.to_string()], |row| {
-            Self::row_to_paper(row)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-        })?;
-
-        match rows.next() {
-            Some(row) => Ok(Some(row?)),
-            None => Ok(None),
-        }
-    }
-
-    /// Get a paper by its BibTeX key
-    pub fn get_by_key(&self, key: &str) -> Result<Option<Paper>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, key, author, year, title, notes, bibtex
-             FROM papers WHERE key = ?1",
-        )?;
-
-        let mut rows = stmt.query_map([key], |row| {
             Self::row_to_paper(row)
                 .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
         })?;
@@ -155,7 +120,7 @@ impl PaperStore {
         let affected = self.conn.execute(
             "UPDATE papers SET 
              key = ?2, author = ?3, year = ?4, title = ?5, notes = ?6,
-             bibtex = ?7, updated_at = CURRENT_TIMESTAMP
+             content = ?7, bibtex = ?8, updated_at = CURRENT_TIMESTAMP
              WHERE id = ?1",
             params![
                 paper.id.to_string(),
@@ -164,6 +129,7 @@ impl PaperStore {
                 paper.year,
                 paper.title,
                 paper.notes,
+                paper.content,
                 paper.bibtex,
             ],
         )?;
@@ -189,17 +155,18 @@ impl PaperStore {
     }
 
     /// List all papers (with optional limit)
+    /// TODO: order by last updated
     pub fn list_all(&self, limit: Option<usize>) -> Result<Vec<Paper>, StoreError> {
         let sql = if let Some(limit) = limit {
             format!(
-                "SELECT id, key, author, year, title, notes, bibtex 
+                "SELECT id, key, author, year, title, notes, content, bibtex 
                      FROM papers 
                      ORDER BY year DESC, title ASC 
                      LIMIT {}",
                 limit
             )
         } else {
-            "SELECT id, key, author, year, title, notes, bibtex 
+            "SELECT id, key, author, year, title, notes, content, bibtex 
              FROM papers 
              ORDER BY year DESC, title ASC"
                 .to_string()
@@ -207,74 +174,6 @@ impl PaperStore {
 
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([], |row| {
-            Self::row_to_paper(row)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-        })?;
-
-        let mut papers = Vec::new();
-        for row in rows {
-            papers.push(row?);
-        }
-
-        Ok(papers)
-    }
-
-    /// Search papers by title (case-insensitive partial match)
-    pub fn search_by_title(&self, query: &str) -> Result<Vec<Paper>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, key, author, year, title, notes, bibtex
-             FROM papers 
-             WHERE title LIKE ?1 
-             ORDER BY year DESC, title ASC",
-        )?;
-
-        let search_pattern = format!("%{}%", query);
-        let rows = stmt.query_map([search_pattern], |row| {
-            Self::row_to_paper(row)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-        })?;
-
-        let mut papers = Vec::new();
-        for row in rows {
-            papers.push(row?);
-        }
-
-        Ok(papers)
-    }
-
-    /// Search papers by author (case-insensitive partial match)
-    pub fn search_by_author(&self, author: &str) -> Result<Vec<Paper>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, key, author, year, title, notes, bibtex
-             FROM papers 
-             WHERE author LIKE ?1 
-             ORDER BY year DESC, title ASC",
-        )?;
-
-        let search_pattern = format!("%{}%", author);
-        let rows = stmt.query_map([search_pattern], |row| {
-            Self::row_to_paper(row)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-        })?;
-
-        let mut papers = Vec::new();
-        for row in rows {
-            papers.push(row?);
-        }
-
-        Ok(papers)
-    }
-
-    /// Get papers by year
-    pub fn get_by_year(&self, year: i64) -> Result<Vec<Paper>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, key, author, year, title, notes, bibtex
-             FROM papers 
-             WHERE year = ?1 
-             ORDER BY title ASC",
-        )?;
-
-        let rows = stmt.query_map([year], |row| {
             Self::row_to_paper(row)
                 .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
         })?;

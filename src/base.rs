@@ -12,6 +12,7 @@ pub struct Paper {
     pub year: i64,
     pub title: String,
     pub notes: Option<String>,
+    pub content: String,
     pub bibtex: String,
 }
 impl Paper {
@@ -26,11 +27,12 @@ impl Paper {
             author: bibtex_data.author,
             year: bibtex_data.year,
             title: bibtex_data.title,
-            notes,              // Start with no notes
+            notes, // Start with no notes
+            content: bibtex_data.content,
             bibtex: bibtex_str, // Store the original BibTeX string
         })
     }
-    pub fn display(&self) -> String {
+    pub fn display(&self, max_width: u16) -> String {
         let mut display_string = format!(
             "{} {}|{} {} {}| ",
             self.year,
@@ -42,7 +44,7 @@ impl Paper {
         display_string.push_str(&format!(
             "{}{}",
             color::Fg(color::Reset),
-            self.trim_details(&self.title, 80),
+            self.trim_details(&self.title, max_width),
         ));
         display_string
     }
@@ -54,6 +56,32 @@ impl Paper {
     }
 }
 
+#[macro_export]
+macro_rules! blog {
+    ($category:expr, $($arg:tt)*) => {{
+        use termion::color;
+        let formatted_args = format!($($arg)*);
+        println!("{}{:>12}{} {}",color::Fg(color::Green), $category,color::Fg(color::Reset), formatted_args);
+    }};
+}
+
+#[macro_export]
+macro_rules! blog_working {
+    ($category:expr, $($arg:tt)*) => {{
+        use termion::color;
+        let formatted_args = format!($($arg)*);
+        println!("{}{:>12}{} {}",color::Fg(color::Blue), $category,color::Fg(color::Reset), formatted_args);
+    }};
+}
+
+#[macro_export]
+macro_rules! blog_done {
+    ($category:expr, $($arg:tt)*) => {{
+        use termion::color;
+        let formatted_args = format!($($arg)*);
+        println!("{}{:>12}{} {}",color::Fg(color::Green), $category,color::Fg(color::Reset), formatted_args);
+    }};
+}
 // impl Paper {
 //     pub fn open_pdf(&self) -> Result<()> {
 //         let pdf_path = utils::io::pdf_path(&self.id)?;

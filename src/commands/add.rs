@@ -545,9 +545,6 @@ pub async fn add(
         blog_done!("Saved", "Paper added to database with ID: {}", paper.id);
     }
 
-    // Display the paper
-    println!("\n{}", paper.display());
-
     // Copy BibTeX to clipboard
     if let Ok(mut clipboard) = arboard::Clipboard::new() {
         if clipboard.set_text(&paper.bibtex).is_ok() {
