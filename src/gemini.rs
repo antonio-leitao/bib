@@ -1,10 +1,13 @@
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 const UPLOAD_URL: &str = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const MODEL_URL: &str =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const EMBEDDING_URL: &str =
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent";
 
 #[derive(Error, Debug)]
 pub enum GeminiError {
@@ -20,8 +23,55 @@ pub enum GeminiError {
     ApiError(String),
     #[error("Could not find generated text in the API response")]
     ContentMissing,
+    #[error("Could not find embedding in the API response")]
+    EmbeddingMissing,
+    #[error("No file uploaded. Call upload_file() first")]
+    NoFileUploaded,
+    #[error("Could not find schema tag in {0} in the response")]
+    NoSchemaTag(String),
+}
+// --- Embedding task types ---
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EmbeddingTaskType {
+    RetrievalQuery,
+    RetrievalDocument,
+    SemanticSimilarity,
+    Classification,
+    Clustering,
 }
 
+// --- Structs for embedding request/response ---
+
+#[derive(Serialize)]
+struct EmbedContentRequest<'a> {
+    content: EmbedContent<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_type: Option<&'a EmbeddingTaskType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_dimensionality: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct EmbedContent<'a> {
+    parts: Vec<EmbedPart<'a>>,
+}
+
+#[derive(Serialize)]
+struct EmbedPart<'a> {
+    text: &'a str,
+}
+
+#[derive(Deserialize, Debug)]
+struct EmbedContentResponse {
+    embedding: Option<Embedding>,
+}
+
+#[derive(Deserialize, Debug)]
+struct Embedding {
+    values: Vec<f32>,
+}
 // --- Structs for file upload response ---
 
 #[derive(Deserialize, Debug)]
@@ -152,7 +202,7 @@ fn get_api_key() -> Result<String, GeminiError> {
 ///    ("author", "The document author"),
 ///    ("topic", "Main topic discussed")
 /// ]);
-pub fn create_object_schema(properties: &[(&str, &str)]) -> serde_json::Value {
+fn create_object_schema(properties: &[(&str, &str)]) -> serde_json::Value {
     let mut props = serde_json::Map::new();
     let mut required = Vec::new();
 
@@ -179,7 +229,7 @@ pub fn create_object_schema(properties: &[(&str, &str)]) -> serde_json::Value {
 ///    &["positive", "negative", "neutral"],
 ///    Some("Sentiment classification")
 /// );
-pub fn create_enum_schema(values: &[&str], description: Option<&str>) -> serde_json::Value {
+fn create_enum_schema(values: &[&str], description: Option<&str>) -> serde_json::Value {
     let mut schema = serde_json::json!({
         "type": "string",
         "enum": values
@@ -198,7 +248,7 @@ pub fn create_enum_schema(values: &[&str], description: Option<&str>) -> serde_j
 ///    ("role", "Their role or job"),
 ///    ("importance", "How important they are to the story")
 /// ]);
-pub fn create_array_schema(item_properties: &[(&str, &str)]) -> serde_json::Value {
+fn create_array_schema(item_properties: &[(&str, &str)]) -> serde_json::Value {
     let item_schema = create_object_schema(item_properties);
 
     serde_json::json!({
@@ -207,17 +257,20 @@ pub fn create_array_schema(item_properties: &[(&str, &str)]) -> serde_json::Valu
     })
 }
 
-pub async fn ask_about_file(
-    file_bytes: Vec<u8>,
-    mime_type: &str,
+async fn ask_about_file(
+    // file_bytes: Vec<u8>,
+    // mime_type: &str,
+    client: &Client,
+    api_key: &str,
+    file_info: &FileInfo,
     prompt: &str,
     response_schema: Option<serde_json::Value>,
 ) -> Result<String, GeminiError> {
-    let api_key = get_api_key()?;
-    let client = Client::new();
+    // let api_key = get_api_key()?;
+    // let client = Client::new();
 
     // Step 1: Upload the file
-    let file_info = upload_file(&client, &api_key, file_bytes, mime_type).await?;
+    // let file_info = upload_file(&client, &api_key, file_bytes, mime_type).await?;
 
     // Step 2: Create generation config if schema is provided
     let generation_config = response_schema.map(|schema| GenerationConfig {
@@ -243,7 +296,7 @@ pub async fn ask_about_file(
 
     let response = client
         .post(MODEL_URL)
-        .header("X-Goog-Api-Key", &api_key)
+        .header("X-Goog-Api-Key", api_key)
         .header(header::CONTENT_TYPE, "application/json")
         .json(&request_body)
         .send()
@@ -269,7 +322,74 @@ pub async fn ask_about_file(
         .ok_or(GeminiError::ContentMissing)
 }
 
-pub const BIBTEX_PROMPT: &str = r#"You are tasked with creating a complete and correctly formatted BibTeX entry from the content of a research article PDF. Follow these steps carefully:
+// --- Public API Functions ---
+
+/// Generates text embeddings for the given input text
+///
+/// # Arguments
+///
+/// * `text` - The text to embed
+/// * `task_type` - The embedding task type (e.g., RETRIEVAL_QUERY, RETRIEVAL_DOCUMENT)
+/// * `output_dimensionality` - Optional output dimensionality (768, 1536, or 3072). If None, uses default 3072
+///
+/// # Returns
+///
+/// * `Result<Vec<f32>, GeminiError>` - The embedding vector
+///
+/// # Example
+///
+/// ```rust
+/// use your_crate::{get_text_embedding, EmbeddingTaskType};
+///
+/// let embedding = get_text_embedding(
+///     "What is the capital of France?",
+///     Some(EmbeddingTaskType::RetrievalQuery),
+///     Some(768)
+/// ).await?;
+/// ```
+async fn get_text_embedding(
+    client: &Client,
+    api_key: &str,
+    text: &str,
+    task_type: Option<EmbeddingTaskType>,
+    output_dimensionality: Option<u32>,
+) -> Result<Vec<f32>, GeminiError> {
+    // let api_key = get_api_key()?;
+    // let client = Client::new();
+
+    let request_body = EmbedContentRequest {
+        content: EmbedContent {
+            parts: vec![EmbedPart { text }],
+        },
+        task_type: task_type.as_ref(),
+        output_dimensionality,
+    };
+
+    let response = client
+        .post(EMBEDDING_URL)
+        .header("X-Goog-Api-Key", api_key)
+        .header(header::CONTENT_TYPE, "application/json")
+        .json(&request_body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await?;
+        return Err(GeminiError::ApiError(format!(
+            "Embedding request failed: {}",
+            error_text
+        )));
+    }
+
+    let embed_response: EmbedContentResponse = response.json().await?;
+
+    embed_response
+        .embedding
+        .map(|e| e.values)
+        .ok_or(GeminiError::EmbeddingMissing)
+}
+
+const BIBTEX_PROMPT: &str = r#"You are tasked with creating a complete and correctly formatted BibTeX entry from the content of a research article PDF. Follow these steps carefully:
 
 1. Carefully analyze the provided PDF to extract the following bibliographic information:
    - Author(s)
@@ -341,10 +461,129 @@ The goal is to maximize the chances that this paper is found by a wide variety o
    - Do not write prose or narrative sentences. Use lists of keywords, key phrases, and very concise statements.
    - Include aliases and synonyms (e.g., 'Topological Data Analysis (TDA)').
 
+**3. Provide your text in the summary_text field.** 
 ---
 
-**Now, analyze the following given text. Adhere strictly to all directives above to produce the single, dense text block.**
+**Now, analyze the given text. Adhere strictly to all directives above to produce the single, dense text block in the summary_text field**
 ";
+/// Main Gemini client that handles file uploads, content generation, and embeddings
+pub struct Gemini {
+    client: Client,
+    api_key: String,
+    uploaded_file: Option<FileInfo>,
+}
+
+impl Gemini {
+    /// Create a new Gemini client instance
+    pub fn new() -> Result<Self, GeminiError> {
+        dotenvy::dotenv().ok();
+        let api_key = std::env::var("GOOGLE_API_KEY").map_err(|_| GeminiError::ApiKeyMissing)?;
+
+        Ok(Self {
+            client: Client::new(),
+            api_key,
+            uploaded_file: None,
+        })
+    }
+
+    /// Upload a file to Gemini and store the file handle for later use
+    pub async fn upload_file(
+        &mut self,
+        file_bytes: Vec<u8>,
+        mime_type: &str,
+    ) -> Result<(), GeminiError> {
+        let file_handle = upload_file(&self.client, &self.api_key, file_bytes, mime_type).await?;
+        self.uploaded_file = Some(file_handle);
+        Ok(())
+    }
+
+    /// Extract BibTeX from the uploaded file using AI
+    pub async fn generate_bibtex(&self) -> Result<String, GeminiError> {
+        let file_info = self
+            .uploaded_file
+            .as_ref()
+            .ok_or(GeminiError::NoFileUploaded)?;
+
+        let schema = create_object_schema(&[("bibtex_entry", "The complete BibTeX entry")]);
+
+        let response = ask_about_file(
+            &self.client,
+            &self.api_key,
+            file_info,
+            BIBTEX_PROMPT,
+            Some(schema),
+        )
+        .await?;
+        let parsed: Value = serde_json::from_str(&response)?;
+
+        let bibtex = parsed
+            .get("bibtex_entry")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| GeminiError::NoSchemaTag("bibtex_entry".to_string()))?;
+
+        Ok(bibtex.to_string())
+    }
+    /// Generate paper summary from file using AI
+    pub async fn generate_paper_embedding(&self) -> Result<Vec<f32>, GeminiError> {
+        let file_info = self
+            .uploaded_file
+            .as_ref()
+            .ok_or(GeminiError::NoFileUploaded)?;
+
+        let schema = create_object_schema(&[(
+            "summary_text",
+            "Keyword-rich text block optimized for vector embedding",
+        )]);
+
+        let response = ask_about_file(
+            &self.client,
+            &self.api_key,
+            file_info,
+            QUERY_PROMPT,
+            Some(schema),
+        )
+        .await?;
+        let parsed: Value = serde_json::from_str(&response)?;
+
+        let summary = parsed
+            .get("summary_text")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| GeminiError::NoSchemaTag("suumary_text".to_string()))?;
+
+        let v = get_text_embedding(
+            &self.client,
+            &self.api_key,
+            summary,
+            Some(EmbeddingTaskType::RetrievalDocument),
+            Some(786),
+        )
+        .await?;
+        let squared_magnitude = dotzilla::dot(&v, &v);
+        if squared_magnitude == 0.0 {
+            return Err(GeminiError::ContentMissing);
+        }
+        let magnitude = squared_magnitude.sqrt();
+        let v = v.into_iter().map(|x| x / magnitude).collect();
+        Ok(v)
+    }
+    pub async fn generate_query_embedding(&self, text: &str) -> Result<Vec<f32>, GeminiError> {
+        let v = get_text_embedding(
+            &self.client,
+            &self.api_key,
+            text,
+            Some(EmbeddingTaskType::RetrievalQuery),
+            Some(786),
+        )
+        .await?;
+        let squared_magnitude = dotzilla::dot(&v, &v);
+        if squared_magnitude == 0.0 {
+            return Err(GeminiError::ContentMissing);
+        }
+        let magnitude = squared_magnitude.sqrt();
+        let v = v.into_iter().map(|x| x / magnitude).collect();
+        Ok(v)
+    }
+}
 
 // EXAMPLE MAIN FUNCTION
 //mod gemini;

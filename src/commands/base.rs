@@ -229,6 +229,7 @@ impl<'a> SearchUI<'a> {
                 if let Some(paper) = self.get_selected_paper() {
                     if let Ok(mut clipboard) = arboard::Clipboard::new() {
                         if clipboard.set_text(&paper.bibtex).is_ok() {
+                            self.store.touch(paper.id)?;
                             self.message = Some(MessageState::Flash {
                                 text: "BibTeX copied!".to_string(),
                                 line_index: self.cursor_pos,
@@ -255,13 +256,16 @@ impl<'a> SearchUI<'a> {
             }
             Message::OpenPaper(alt_mode) => {
                 if let Some(paper) = self.get_selected_paper() {
-                    if let Err(e) = paper.open_pdf(alt_mode) {
-                        self.message = Some(MessageState::Flash {
-                            text: format!("Failed: {}", e),
-                            line_index: self.cursor_pos,
-                            expires_at: Instant::now() + Duration::from_secs(3),
-                        });
-                    };
+                    match paper.open_pdf(alt_mode) {
+                        Ok(()) => self.store.touch(paper.id)?,
+                        Err(e) => {
+                            self.message = Some(MessageState::Flash {
+                                text: format!("Failed: {}", e),
+                                line_index: self.cursor_pos,
+                                expires_at: Instant::now() + Duration::from_secs(3),
+                            });
+                        }
+                    }
                 }
             }
             Message::ConfirmPrompt => {
@@ -537,105 +541,3 @@ pub fn interactive_search(store: &mut PaperStore, limit: usize) -> Result<(), Se
     let ui = SearchUI::init(store, limit)?;
     ui.run()
 }
-// pub fn interactive_search(store: &PaperStore, limit: usize) -> Result<(), SearchError> {
-//     let papers = store.list_all(None)?;
-//     let stdin = io::stdin();
-//     let mut stdout = io::stdout().into_raw_mode().unwrap();
-//     // let (width, _) = termion::terminal_size().unwrap();
-//     let mut query = String::new();
-//     // Move the cursor to the bottom of the previous output before starting
-//     //hide cursor
-//     write!(stdout, "{}", termion::cursor::Hide)?;
-//     draw_search_ui(&mut stdout, &query, &papers, limit)?;
-//
-//     for c in stdin.keys() {
-//         match c.unwrap() {
-//             Key::Char('\n') => {
-//                 break;
-//             }
-//             Key::Esc | Key::Ctrl('c') => {
-//                 break;
-//             }
-//             Key::Char(ch) => {
-//                 query.push(ch); // Add character to query
-//                 draw_search_ui(&mut stdout, &query, &papers, limit)?; // Redraw UI
-//             }
-//             Key::Backspace => {
-//                 query.pop(); // Remove last character
-//                 draw_search_ui(&mut stdout, &query, &papers, limit)?; // Redraw UI
-//             }
-//             _ => {}
-//         }
-//     }
-//     // Clean screen
-//     write!(
-//         stdout,
-//         "{}{}",
-//         termion::clear::AfterCursor,
-//         termion::cursor::Show
-//     )?;
-//     Ok(())
-// }
-//
-// fn draw_search_ui(
-//     stdout: &mut RawTerminal<Stdout>,
-//     query: &str,
-//     papers: &[Paper],
-//     limit: usize,
-// ) -> Result<(), SearchError> {
-//     let results = fuzzy_search_papers(papers, query, limit);
-//     let (width, _) = termion::terminal_size().unwrap();
-//
-//     // Print the actual results
-//     writeln!(stdout, "{}> {}\r", termion::clear::CurrentLine, query)?;
-//     for (_i, word) in results.iter().enumerate() {
-//         write!(
-//             stdout,
-//             "{}{}",
-//             termion::clear::CurrentLine,
-//             word.display(width - 2)
-//         )?;
-//         writeln!(stdout, "\r")?;
-//     }
-//
-//     // Print blank lines for remaining slots
-//     for _ in results.len()..limit {
-//         write!(stdout, "{}", termion::clear::CurrentLine)?;
-//         writeln!(stdout, "\r")?;
-//     }
-//
-//     // Move cursor back up by the full limit, not just results.len()
-//     write!(stdout, "{}", termion::cursor::Up(limit as u16 + 1))?;
-//     stdout.flush()?;
-//     Ok(())
-// }
-//
-// pub fn open(query: String) -> Result<()> {
-//     let mut papers = load_papers()?;
-//     match select(query, &papers)? {
-//         Some(paper) => {
-//             paper.open_pdf()?;
-//             pull_up(&mut papers, &paper.id);
-//             save_papers(&papers)?;
-//         }
-//         None => (),
-//     };
-//     Ok(())
-// }
-//
-// pub fn yank(query: String) -> Result<()> {
-//     let mut papers = load_papers()?;
-//     match select(query, &papers)? {
-//         Some(paper) => {
-//             let mut ctx = ClipboardContext::new()
-//                 .map_err(|e| anyhow!("Failed to create clipboard context: {}", e))?;
-//             ctx.set_contents(paper.bibtex.clone())
-//                 .map_err(|e| anyhow!("Failed to set clipboard contents: {}", e))?;
-//             pull_up(&mut papers, &paper.id);
-//             save_papers(&papers)?;
-//             blog!("Copied", "bibtex to clipboard")
-//         }
-//         None => (),
-//     };
-//     Ok(())
-// }

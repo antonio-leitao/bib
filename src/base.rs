@@ -1,10 +1,13 @@
 use crate::bibtex::{self, BibtexError};
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use termion::color;
 use thiserror::Error;
+use url::Url;
 use webbrowser;
 
 #[derive(Error, Debug)]
@@ -19,6 +22,11 @@ pub enum PdfError {
     InvalidPath,
     #[error("Failed to open PDF: {0}")]
     OpenError(String),
+}
+
+pub struct Embedding {
+    pub id: u128,
+    pub coords: Vec<f32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -262,6 +270,50 @@ macro_rules! blog_done {
         println!("{}{:>12}{} {}",color::Fg(color::Green), $category,color::Fg(color::Reset), formatted_args);
     }};
 }
+
+/// Handles UI progress indicators
+pub struct UI;
+
+impl UI {
+    pub fn download_progress(total_size: u64, url: &str) -> ProgressBar {
+        let pb = ProgressBar::new(total_size);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{prefix:.blue.bold} {spinner:.blue} [{bar:30.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                .expect("Invalid progress template")
+                .progress_chars("█▉▊▋▌▍▎▏  "),
+        );
+
+        let domain = Url::parse(url)
+            .ok()
+            .and_then(|u| u.domain().map(|d| d.to_string()))
+            .unwrap_or_else(|| "source".to_string());
+
+        pb.set_prefix(format!("{:>12}", "Downloading"));
+        pb.set_message(format!("from {}", domain));
+        pb
+    }
+
+    pub fn spinner(category: &str, message: &str) -> ProgressBar {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{prefix:.blue.bold} {spinner:.blue} {msg}")
+                .expect("Invalid spinner template")
+                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+        );
+        pb.set_prefix(format!("{:>12}", category));
+        pb.set_message(message.to_string());
+        pb.enable_steady_tick(Duration::from_millis(80));
+        pb
+    }
+
+    pub fn finish_with_message(pb: ProgressBar, completed_category: &str, message: &str) {
+        pb.finish_and_clear();
+        blog_done!(completed_category, "{}", message);
+    }
+}
+
 // impl Paper {
 //     pub fn open_pdf(&self) -> Result<()> {
 //         let pdf_path = utils::io::pdf_path(&self.id)?;

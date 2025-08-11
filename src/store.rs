@@ -1,4 +1,4 @@
-use crate::base::Paper;
+use crate::base::{Embedding, Paper};
 use rusqlite::{params, Connection, Row};
 use std::path::Path;
 use thiserror::Error;
@@ -11,8 +11,9 @@ pub enum StoreError {
     NotFound(u128),
     #[error("Paper with key already exists: {0}")]
     KeyExists(String),
+    #[error("Serialization error: {0}")]
+    Serialization(String),
 }
-
 pub struct PaperStore {
     conn: Connection,
 }
@@ -28,6 +29,7 @@ impl PaperStore {
 
     /// Initialize the database schema
     fn init_schema(&self) -> Result<(), StoreError> {
+        // Create papers table
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS papers (
                 id TEXT PRIMARY KEY,
@@ -40,6 +42,19 @@ impl PaperStore {
                 bibtex TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        // Create embeddings table
+        self.conn.execute(
+            "CREATE TABLE IF NOT EXISTS embeddings (
+                paper_id TEXT PRIMARY KEY,
+                embedding BLOB NOT NULL,
+                dimensions INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (paper_id) REFERENCES papers (id) ON DELETE CASCADE
             )",
             [],
         )?;
@@ -97,6 +112,60 @@ impl PaperStore {
         }
     }
 
+    /// Save or update an embedding for a paper
+    pub fn save_embedding(&mut self, paper_id: u128, embedding: &[f32]) -> Result<(), StoreError> {
+        // Serialize the embedding to bytes
+        let embedding_bytes =
+            bincode::serialize(embedding).map_err(|e| StoreError::Serialization(e.to_string()))?;
+
+        let dimensions = embedding.len() as i64;
+        let paper_id_str = paper_id.to_string();
+
+        // Use INSERT OR REPLACE to handle both insert and update
+        self.conn.execute(
+            "INSERT OR REPLACE INTO embeddings 
+             (paper_id, embedding, dimensions, updated_at)
+             VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)",
+            params![paper_id_str, embedding_bytes, dimensions],
+        )?;
+
+        Ok(())
+    }
+
+    fn row_to_embedding(row: &Row) -> Result<Embedding, StoreError> {
+        let id_str: String = row.get("paper_id")?;
+        let id = id_str.parse::<u128>().map_err(|e| {
+            StoreError::Database(rusqlite::Error::FromSqlConversionFailure(
+                0, // column index
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            ))
+        })?;
+
+        let embedding_bytes: Vec<u8> = row.get("embedding")?;
+        let coords: Vec<f32> = bincode::deserialize(&embedding_bytes)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?;
+
+        Ok(Embedding { id, coords })
+    }
+
+    pub fn load_all_embeddings(&self) -> Result<Vec<Embedding>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT paper_id, embedding FROM embeddings")?;
+
+        let embedding_iter = stmt.query_map([], |row| {
+            // Use the new helper and map its StoreError to a rusqlite::Error
+            Self::row_to_embedding(row)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+        })?;
+
+        // Collect the iterator of Results into a single Result<Vec<Embedding>>
+        embedding_iter
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::from)
+    }
+
     /// Get a paper by its ID
     pub fn get_by_id(&self, id: u128) -> Result<Option<Paper>, StoreError> {
         let mut stmt = self.conn.prepare(
@@ -113,6 +182,51 @@ impl PaperStore {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
+    }
+    //Get papers by a list of ids
+    pub fn get_by_ids(&self, ids: &[u128]) -> Result<Vec<Paper>, StoreError> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // 1. Convert u128 IDs to String (since IDs are stored as TEXT)
+        let id_strings: Vec<String> = ids.iter().map(|&id| id.to_string()).collect();
+
+        // 2. Generate the dynamic placeholders (e.g., "?1, ?2, ?3")
+        let placeholders = (1..=id_strings.len())
+            .map(|i| format!("?{}", i))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        // 3. Construct the SQL query with the IN clause
+        let sql = format!(
+            "SELECT id, key, author, year, title, notes, content, bibtex
+             FROM papers WHERE id IN ({})",
+            placeholders
+        );
+
+        // 4. Prepare the statement
+        let mut stmt = self.conn.prepare(&sql)?;
+
+        // 5. Bind parameters (rusqlite expects &dyn ToSql for dynamic bindings)
+        let params: Vec<&dyn rusqlite::ToSql> = id_strings
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+
+        // 6. Execute the query and map the results
+        let rows = stmt.query_map(&params[..], |row| {
+            Self::row_to_paper(row)
+                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+        })?;
+
+        // 7. Collect the results
+        let mut papers = Vec::new();
+        for row in rows {
+            papers.push(row?);
+        }
+
+        Ok(papers)
     }
 
     /// Update an existing paper
@@ -140,13 +254,28 @@ impl PaperStore {
 
         Ok(())
     }
+    pub fn touch(&mut self, id: u128) -> Result<(), StoreError> {
+        let affected = self.conn.execute(
+            "UPDATE papers SET updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            [id.to_string()],
+        )?;
 
-    /// Delete a paper by ID
+        if affected == 0 {
+            return Err(StoreError::NotFound(id));
+        }
+
+        Ok(())
+    }
+    /// Delete a paper by ID (cascades to embeddings)
     pub fn delete(&mut self, id: u128) -> Result<(), StoreError> {
         let affected = self
             .conn
             .execute("DELETE FROM papers WHERE id = ?1", [id.to_string()])?;
 
+        self.conn.execute(
+            "DELETE FROM embeddings WHERE paper_id = ?1",
+            [id.to_string()],
+        )?;
         if affected == 0 {
             return Err(StoreError::NotFound(id));
         }
@@ -155,20 +284,19 @@ impl PaperStore {
     }
 
     /// List all papers (with optional limit)
-    /// TODO: order by last updated
     pub fn list_all(&self, limit: Option<usize>) -> Result<Vec<Paper>, StoreError> {
         let sql = if let Some(limit) = limit {
             format!(
                 "SELECT id, key, author, year, title, notes, content, bibtex 
                      FROM papers 
-                     ORDER BY year DESC, title ASC 
+                     ORDER BY updated_at DESC, title ASC 
                      LIMIT {}",
                 limit
             )
         } else {
             "SELECT id, key, author, year, title, notes, content, bibtex 
              FROM papers 
-             ORDER BY year DESC, title ASC"
+             ORDER BY updated_at DESC, title ASC"
                 .to_string()
         };
 

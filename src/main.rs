@@ -1,8 +1,11 @@
 use clap::{Parser, Subcommand};
-use commands::prompt::interactive_search;
+use commands::base::interactive_search;
+use commands::find::find;
 use std::path::PathBuf;
 use std::process;
 
+use crate::base::PdfStorage;
+use std::fs;
 use thiserror::Error;
 mod base;
 mod bibtex;
@@ -18,7 +21,9 @@ pub enum AppError {
     #[error("Store error: {0}")]
     Store(#[from] store::StoreError),
     #[error("Search error: {0}")]
-    SearchError(#[from] commands::prompt::SearchError),
+    SearchError(#[from] commands::base::SearchError),
+    #[error("Find error: {0}")]
+    FindError(String),
 }
 
 #[derive(Parser)]
@@ -50,9 +55,12 @@ enum Commands {
     },
 
     /// Interactive search papers using fuzzy matching
-    Prompt {
+    Find {
         /// Search query
         query: String,
+        /// Maximum number of different papers to pass to LLM
+        #[arg(short = 'n', long, default_value = "30")]
+        limit: usize,
     },
     /// Show database statistics
     Stats,
@@ -101,10 +109,9 @@ async fn main() {
         Commands::Search { limit } => {
             interactive_search(&mut store, limit).map_err(|e| AppError::SearchError(e))
         }
-        Commands::Prompt { query } => {
-            println!("proompting");
-            Ok(())
-        }
+        Commands::Find { query, limit } => find(&mut store, &query, limit)
+            .await
+            .map_err(|e| AppError::FindError(e.to_string())),
         Commands::Stats => show_stats(&store),
     };
 
@@ -115,9 +122,6 @@ async fn main() {
 }
 
 fn show_stats(store: &PaperStore) -> Result<(), AppError> {
-    use crate::base::PdfStorage;
-    use std::fs;
-
     println!("\nDatabase Statistics:");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
@@ -150,7 +154,6 @@ fn show_stats(store: &PaperStore) -> Result<(), AppError> {
 
     Ok(())
 }
-
 fn error_message(err: &str) {
     println!(
         "{}{:>12}{} {}",

@@ -1,4 +1,5 @@
-use crate::base::{Paper, PdfStorage};
+use crate::base::{Paper, PdfStorage, UI};
+use crate::gemini::Gemini;
 use crate::store::{PaperStore, StoreError};
 use crate::{bibtex, blog, blog_done, gemini};
 use std::fs::File;
@@ -8,11 +9,9 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use arboard::Clipboard;
-use indicatif::{ProgressBar, ProgressStyle};
 use quick_xml::{events::Event, Reader};
 use regex::Regex;
 use reqwest::header;
-use serde_json::Value;
 use thiserror::Error;
 use url::Url;
 
@@ -64,49 +63,6 @@ enum InputType {
     ArxivUrl(String),
     PdfUrl(String),
     PdfPath(PathBuf),
-}
-
-/// Handles UI progress indicators
-struct UI;
-
-impl UI {
-    fn download_progress(total_size: u64, url: &str) -> ProgressBar {
-        let pb = ProgressBar::new(total_size);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{prefix:.blue.bold} {spinner:.blue} [{bar:30.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-                .expect("Invalid progress template")
-                .progress_chars("█▉▊▋▌▍▎▏  "),
-        );
-
-        let domain = Url::parse(url)
-            .ok()
-            .and_then(|u| u.domain().map(|d| d.to_string()))
-            .unwrap_or_else(|| "source".to_string());
-
-        pb.set_prefix(format!("{:>12}", "Downloading"));
-        pb.set_message(format!("from {}", domain));
-        pb
-    }
-
-    fn spinner(category: &str, message: &str) -> ProgressBar {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("{prefix:.blue.bold} {spinner:.blue} {msg}")
-                .expect("Invalid spinner template")
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-        );
-        pb.set_prefix(format!("{:>12}", category));
-        pb.set_message(message.to_string());
-        pb.enable_steady_tick(Duration::from_millis(80));
-        pb
-    }
-
-    fn finish_with_message(pb: ProgressBar, completed_category: &str, message: &str) {
-        pb.finish_and_clear();
-        blog_done!(completed_category, "{}", message);
-    }
 }
 
 /// Handles PDF acquisition and source identification
@@ -394,15 +350,19 @@ impl BibtexParser {
 struct BibTeXGenerator;
 
 impl BibTeXGenerator {
-    async fn generate_bibtex(pdf_source: PdfSource) -> Result<String, BibError> {
+    async fn generate_bibtex(ai: &mut Gemini, pdf_source: PdfSource) -> Result<String, BibError> {
         if let Some(arxiv_id) = pdf_source.arxiv_id {
-            Self::generate_bibtex_arxiv(pdf_source.bytes, &arxiv_id).await
+            Self::generate_bibtex_arxiv(ai, pdf_source.bytes, &arxiv_id).await
         } else {
-            Self::generate_bibtex_with_doi_upgrade(pdf_source.bytes).await
+            Self::generate_bibtex_with_doi_upgrade(ai, pdf_source.bytes).await
         }
     }
 
-    async fn generate_bibtex_arxiv(pdf_bytes: Vec<u8>, arxiv_id: &str) -> Result<String, BibError> {
+    async fn generate_bibtex_arxiv(
+        ai: &mut Gemini,
+        pdf_bytes: Vec<u8>,
+        arxiv_id: &str,
+    ) -> Result<String, BibError> {
         // Try DOI lookup first
         let spinner = UI::spinner("checking", "for DOI on arXiv...");
 
@@ -415,6 +375,8 @@ impl BibTeXGenerator {
 
                 match CrossRefApi::get_bibtex(&doi).await {
                     Ok(bibtex) => {
+                        //if we are skipping ai we have to make sure we are uploading the file
+                        ai.upload_file(pdf_bytes, "application/pdf").await?;
                         UI::finish_with_message(
                             crossref_spinner,
                             "Retrieved",
@@ -440,12 +402,15 @@ impl BibTeXGenerator {
         }
 
         // Fallback to AI
-        Self::generate_bibtex_ai(pdf_bytes).await
+        Self::generate_bibtex_ai(ai, pdf_bytes).await
     }
 
-    async fn generate_bibtex_with_doi_upgrade(pdf_bytes: Vec<u8>) -> Result<String, BibError> {
+    async fn generate_bibtex_with_doi_upgrade(
+        ai: &mut Gemini,
+        pdf_bytes: Vec<u8>,
+    ) -> Result<String, BibError> {
         // Generate with AI first
-        let mut bibtex = Self::generate_bibtex_ai(pdf_bytes).await?;
+        let mut bibtex = Self::generate_bibtex_ai(ai, pdf_bytes).await?;
 
         // Try to upgrade with official version
         if let Some(doi) = BibtexParser::extract_doi(&bibtex) {
@@ -473,41 +438,112 @@ impl BibTeXGenerator {
         Ok(bibtex)
     }
 
-    async fn generate_bibtex_ai(pdf_bytes: Vec<u8>) -> Result<String, BibError> {
-        let spinner = UI::spinner("extracting", "bibtex using Gemini AI...");
-
-        let schema = gemini::create_object_schema(&[("bibtex_entry", "The complete BibTeX entry")]);
-
-        let response = gemini::ask_about_file(
-            pdf_bytes,
-            "application/pdf",
-            gemini::BIBTEX_PROMPT,
-            Some(schema),
-        )
-        .await?;
-
-        let bibtex_entry = Self::extract_bibtex_from_response(&response)?;
-
-        UI::finish_with_message(spinner, "extracted", "bibtex using Gemini AI");
+    async fn generate_bibtex_ai(ai: &mut Gemini, pdf_bytes: Vec<u8>) -> Result<String, BibError> {
+        let spinner = UI::spinner("Extracting", "bibtex using Gemini AI...");
+        ai.upload_file(pdf_bytes, "application/pdf").await?;
+        let bibtex_entry = ai.generate_bibtex().await?;
+        UI::finish_with_message(spinner, "Extracted", "bibtex using Gemini AI");
         Ok(bibtex_entry)
-    }
-
-    fn extract_bibtex_from_response(json_response: &str) -> Result<String, BibError> {
-        let parsed: Value = serde_json::from_str(json_response)
-            .map_err(|e| BibError::BibTeXParseError(format!("Invalid JSON: {}", e)))?;
-
-        let bibtex = parsed
-            .get("bibtex_entry")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                BibError::BibTeXParseError("No 'bibtex_entry' field found in response".to_string())
-            })?;
-
-        Ok(bibtex.to_string())
     }
 }
 
-/// Main entry point - now saves to the store
+/// Helper function to prompt user for confirmation
+fn prompt_user_confirmation(message: &str) -> Result<bool, BibError> {
+    println!("\n{} (y/n)", message);
+
+    use std::io::{self, BufRead};
+    let stdin = io::stdin();
+    let mut handle = stdin.lock();
+    let mut response = String::new();
+    handle.read_line(&mut response)?;
+
+    Ok(response.trim().to_lowercase() == "y")
+}
+
+/// Process a new paper entry (create and save everything)
+async fn process_new_paper(
+    store: &mut PaperStore,
+    ai: &mut Gemini,
+    paper: &Paper,
+    pdf_bytes: &[u8],
+) -> Result<(), BibError> {
+    // Generate embedding
+    let spinner = UI::spinner("Generating", "Paper embedding...");
+    let embedding = ai.generate_paper_embedding().await?;
+    UI::finish_with_message(
+        spinner,
+        "Generated",
+        &format!("Paper embedding, dimensions: {}", embedding.len()),
+    );
+
+    // Save paper to database
+    store.create(&paper)?;
+
+    // Save embedding to database
+    store.save_embedding(paper.id, &embedding)?;
+
+    // Save PDF file
+    let spinner = UI::spinner("Saving", "PDF to disk...");
+    let pdf_path = PdfStorage::save_pdf(&pdf_bytes, &paper)?;
+    let size_str = PdfStorage::format_file_size(pdf_bytes.len());
+    UI::finish_with_message(
+        spinner,
+        "Saved PDF",
+        &format!(
+            "{} ({})",
+            pdf_path.file_name().unwrap().to_string_lossy(),
+            size_str
+        ),
+    );
+
+    blog_done!("Saved", "{}", paper.title);
+    blog!("PDF Path", "{}", pdf_path.display());
+
+    Ok(())
+}
+
+/// Process an update to existing paper
+async fn process_paper_update(
+    store: &mut PaperStore,
+    ai: &mut Gemini,
+    paper: &Paper,
+    pdf_bytes: &[u8],
+) -> Result<(), BibError> {
+    // Update paper in database
+    store.update(&paper)?;
+
+    // Generate and update embedding
+    let spinner = UI::spinner("Updating", "Paper embedding...");
+    let embedding = ai.generate_paper_embedding().await?;
+    UI::finish_with_message(
+        spinner,
+        "Updated",
+        &format!("Paper embedding, dimensions: {}", embedding.len()),
+    );
+
+    store.save_embedding(paper.id, &embedding)?;
+
+    // Save or update PDF file
+    let spinner = UI::spinner("Updating", "PDF on disk...");
+    let pdf_path = PdfStorage::save_pdf(&pdf_bytes, &paper)?;
+    let size_str = PdfStorage::format_file_size(pdf_bytes.len());
+    UI::finish_with_message(
+        spinner,
+        "Updated PDF",
+        &format!(
+            "{} ({})",
+            pdf_path.file_name().unwrap().to_string_lossy(),
+            size_str
+        ),
+    );
+
+    blog_done!("Updated", "Paper successfully updated in database");
+    blog!("PDF Path", "{}", pdf_path.display());
+
+    Ok(())
+}
+
+/// Main entry point - now saves to the store with cleaned up logic
 pub async fn add(
     input: Option<String>,
     notes: Option<String>,
@@ -515,12 +551,13 @@ pub async fn add(
 ) -> Result<(), BibError> {
     // Get PDF source (bytes + optional arXiv ID)
     let pdf_source = PdfHandler::get_pdf_source(input).await?;
-
-    // Store the PDF bytes for later saving
     let pdf_bytes = pdf_source.bytes.clone();
 
+    // Start Gemini
+    let mut ai = Gemini::new()?;
+
     // Generate BibTeX using appropriate strategy
-    let bibtex = BibTeXGenerator::generate_bibtex(pdf_source).await?;
+    let bibtex = BibTeXGenerator::generate_bibtex(&mut ai, pdf_source).await?;
 
     // Create Paper from BibTeX
     let paper = Paper::from_bibtex(bibtex, notes)?;
@@ -539,56 +576,14 @@ pub async fn add(
         }
 
         // Ask user if they want to update
-        println!("\nWould you like to update the existing entry? (y/n)");
-
-        use std::io::{self, BufRead};
-        let stdin = io::stdin();
-        let mut handle = stdin.lock();
-        let mut response = String::new();
-        handle.read_line(&mut response)?;
-
-        if response.trim().to_lowercase() == "y" {
-            store.update(&paper)?;
-
-            // Save or update the PDF file with progress indicator
-            let spinner = UI::spinner("Saving", "PDF to disk...");
-            let pdf_path = PdfStorage::save_pdf(&pdf_bytes, &paper)?;
-            let size_str = PdfStorage::format_file_size(pdf_bytes.len());
-            UI::finish_with_message(
-                spinner,
-                "Saved PDF",
-                &format!(
-                    "{} ({})",
-                    pdf_path.file_name().unwrap().to_string_lossy(),
-                    size_str
-                ),
-            );
-
-            blog_done!("Updated", "Paper successfully updated in database");
-            blog!("PDF Path", "{}", pdf_path.display());
+        if prompt_user_confirmation("Would you like to update the existing entry?")? {
+            process_paper_update(store, &mut ai, &paper, &pdf_bytes).await?;
         } else {
             blog!("Skipped", "Paper not saved");
         }
     } else {
-        // Save to store
-        store.create(&paper)?;
-
-        // Save the PDF file with progress indicator
-        let spinner = UI::spinner("Saving", "PDF to disk...");
-        let pdf_path = PdfStorage::save_pdf(&pdf_bytes, &paper)?;
-        let size_str = PdfStorage::format_file_size(pdf_bytes.len());
-        UI::finish_with_message(
-            spinner,
-            "Saved PDF",
-            &format!(
-                "{} ({})",
-                pdf_path.file_name().unwrap().to_string_lossy(),
-                size_str
-            ),
-        );
-
-        blog_done!("Saved", "Paper added to database: {}", paper.title);
-        blog!("PDF Path", "{}", pdf_path.display());
+        // New paper - create everything
+        process_new_paper(store, &mut ai, &paper, &pdf_bytes).await?;
     }
 
     Ok(())
