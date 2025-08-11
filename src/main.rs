@@ -99,7 +99,7 @@ async fn main() {
             .await
             .map_err(|e| AppError::AddError(e)),
         Commands::Search { limit } => {
-            interactive_search(&store, limit).map_err(|e| AppError::SearchError(e))
+            interactive_search(&mut store, limit).map_err(|e| AppError::SearchError(e))
         }
         Commands::Prompt { query } => {
             println!("proompting");
@@ -115,41 +115,38 @@ async fn main() {
 }
 
 fn show_stats(store: &PaperStore) -> Result<(), AppError> {
-    let count = store.count()?;
+    use crate::base::PdfStorage;
+    use std::fs;
+
     println!("\nDatabase Statistics:");
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    // Get total number of papers
+    let count = store.count()?;
     println!("  Total papers: {}", count);
 
-    if count > 0 {
-        let papers = store.list_all(None)?;
+    // Get database file size
+    let db_path = get_db_path();
+    let db_size = fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    println!(
+        "  Database size: {}",
+        PdfStorage::format_file_size(db_size as usize)
+    );
 
-        if let (Some(min), Some(max)) =
-            papers
-                .iter()
-                .map(|p| p.year)
-                .fold((None, None), |(min, max), year| {
-                    (
-                        Some(min.map_or(year, |m: i64| m.min(year))),
-                        Some(max.map_or(year, |m: i64| m.max(year))),
-                    )
-                })
-        {
-            println!("  Year range: {} - {}", min, max);
-        }
+    // Get total PDF storage size
+    let pdf_size = PdfStorage::total_storage_size().unwrap_or(0);
+    println!(
+        "  PDF storage: {}",
+        PdfStorage::format_file_size(pdf_size as usize)
+    );
 
-        let mut year_counts = std::collections::HashMap::new();
-        for paper in &papers {
-            *year_counts.entry(paper.year).or_insert(0) += 1;
-        }
-
-        println!("\n  Papers by year:");
-        let mut years: Vec<_> = year_counts.keys().collect();
-        years.sort_by(|a, b| b.cmp(a));
-
-        for year in years.iter().take(10) {
-            let count = year_counts[*year];
-            println!("    {}: {} paper(s)", year, count);
-        }
-    }
+    // Calculate total storage
+    let total_size = db_size + pdf_size;
+    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!(
+        "  Total storage: {}",
+        PdfStorage::format_file_size(total_size as usize)
+    );
 
     Ok(())
 }

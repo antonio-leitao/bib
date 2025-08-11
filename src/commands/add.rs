@@ -1,4 +1,4 @@
-use crate::base::Paper;
+use crate::base::{Paper, PdfStorage};
 use crate::store::{PaperStore, StoreError};
 use crate::{bibtex, blog, blog_done, gemini};
 use std::fs::File;
@@ -49,6 +49,8 @@ pub enum BibError {
     BibtexParse(#[from] bibtex::BibtexError),
     #[error("Store error: {0}")]
     Store(#[from] StoreError),
+    #[error("PDF storage error: {0}")]
+    PdfStorage(#[from] crate::base::PdfError),
 }
 
 #[derive(Debug)]
@@ -514,6 +516,9 @@ pub async fn add(
     // Get PDF source (bytes + optional arXiv ID)
     let pdf_source = PdfHandler::get_pdf_source(input).await?;
 
+    // Store the PDF bytes for later saving
+    let pdf_bytes = pdf_source.bytes.clone();
+
     // Generate BibTeX using appropriate strategy
     let bibtex = BibTeXGenerator::generate_bibtex(pdf_source).await?;
 
@@ -523,6 +528,15 @@ pub async fn add(
     // Check if paper already exists
     if store.exists_by_key(&paper.key)? {
         blog!("Status", "Paper already exists with key: {}", paper.key);
+
+        // Check if PDF already exists
+        if paper.pdf_exists() {
+            blog!(
+                "PDF Status",
+                "PDF already exists at: {}",
+                paper.pdf_path().display()
+            );
+        }
 
         // Ask user if they want to update
         println!("\nWould you like to update the existing entry? (y/n)");
@@ -535,21 +549,46 @@ pub async fn add(
 
         if response.trim().to_lowercase() == "y" {
             store.update(&paper)?;
+
+            // Save or update the PDF file with progress indicator
+            let spinner = UI::spinner("Saving", "PDF to disk...");
+            let pdf_path = PdfStorage::save_pdf(&pdf_bytes, &paper)?;
+            let size_str = PdfStorage::format_file_size(pdf_bytes.len());
+            UI::finish_with_message(
+                spinner,
+                "Saved PDF",
+                &format!(
+                    "{} ({})",
+                    pdf_path.file_name().unwrap().to_string_lossy(),
+                    size_str
+                ),
+            );
+
             blog_done!("Updated", "Paper successfully updated in database");
+            blog!("PDF Path", "{}", pdf_path.display());
         } else {
             blog!("Skipped", "Paper not saved");
         }
     } else {
         // Save to store
         store.create(&paper)?;
-        blog_done!("Saved", "Paper added to database with ID: {}", paper.id);
-    }
 
-    // Copy BibTeX to clipboard
-    if let Ok(mut clipboard) = arboard::Clipboard::new() {
-        if clipboard.set_text(&paper.bibtex).is_ok() {
-            blog_done!("Copied", "BibTeX to clipboard");
-        }
+        // Save the PDF file with progress indicator
+        let spinner = UI::spinner("Saving", "PDF to disk...");
+        let pdf_path = PdfStorage::save_pdf(&pdf_bytes, &paper)?;
+        let size_str = PdfStorage::format_file_size(pdf_bytes.len());
+        UI::finish_with_message(
+            spinner,
+            "Saved PDF",
+            &format!(
+                "{} ({})",
+                pdf_path.file_name().unwrap().to_string_lossy(),
+                size_str
+            ),
+        );
+
+        blog_done!("Saved", "Paper added to database: {}", paper.title);
+        blog!("PDF Path", "{}", pdf_path.display());
     }
 
     Ok(())

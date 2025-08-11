@@ -296,6 +296,56 @@ pub const BIBTEX_PROMPT: &str = r#"You are tasked with creating a complete and c
 4. If you are unable to extract certain information from the PDF content, use your best judgment to create the most complete BibTeX entry possible with the available information. If critical information is missing, indicate this in a comment within the BibTeX entry.
 "#;
 
+const QUERY_PROMPT: &str = "r#
+You are an expert research analyst and data pre-processor for a state-of-the-art AI search system. Your task is to analyze the provided research paper and generate a single, dense, keyword-rich text block optimized for vector embedding.
+
+This output is NOT for human reading.It is designed to be embedded into a vector space for a high-recall Retrieval-Augmented Generation (RAG) system. 
+The goal is to maximize the chances that this paper is found by a wide variety of relevant search queries (high recall).
+
+**## CORE DIRECTIVES ##**
+
+**1. Output Format - CRITICAL:**
+   - Your final output must be a single, continuous block of text. Do not write prose or narrative sentences. Use keywords, key phrases, and very concise statements.
+   - **You MUST NOT include the section headings (like 'KEY_RELATIONSHIPS:', 'CONCEPTS_AND_OBJECTS:', etc.) in the final output.** They are instructions for you, not text for the output.
+   - Simply provide the raw extracted information, moving from one category to the next to form one seamless block of text.
+
+**2. Token Budget and Density:**
+   - The final output should be as dense as possible, aiming for a maximum of **2000 tokens**.
+   - **Be Exhaustive:** Scour the entire text. Extract all significant terms, even if they are mentioned only once. Redundancy is better than omission for this task.
+   - You are strongly encouraged to use all available tokens. 
+
+**3. Content Generation - STRICT PRIORITY ORDER:**
+   - You must generate the content in the following order to ensure the most critical information is included before the token limit is reached.
+
+   **PRIORITY 1: KEY_RELATIONSHIPS:**
+   - **(Generate this section first)**. This is the most important part. Extract phrases and concise statements that describe the connections *between* concepts.
+   - *Examples*: 'Application of Dowker complexes to category theory,' 'Using persistent homology to analyze sensor network data,' 'A link between graph theory and spectral analysis for clustering,' 'Comparison of Dowker duality with nerve constructions.'
+
+   **PRIORITY 2: CONCEPTS_AND_OBJECTS:**
+   - **(Generate this section second)**. After exhausting relationships, list all core mathematical/scientific objects, definitions, and structures.
+   - *Examples*: 'Dowker complex,' 'simplicial set,' 'nerve of a category,' 'persistent homology,' 'adjoint functor,' 'model category.'
+
+   **PRIORITY 3: METHODS_AND_TECHNIQUES:**
+   - **(Generate this section third)**. List all methods, algorithms, experimental procedures, and frameworks used or proposed.
+   - *Examples*: 'spectral sequence analysis,' 'principal component analysis (PCA),' 'backpropagation,' 'finite element method.'
+
+   **PRIORITY 4: RESULTS_AND_CONCLUSIONS:**
+   - **(Generate this section fourth)**. List key findings, theorems, lemmas, and major conclusions as concise phrases.
+   - *Examples*: 'Theorem 3.1: Homotopy equivalence of Dowker and Cech complexes,' 'demonstrated 5% accuracy improvement,' 'established a new lower bound.'
+
+   **PRIORITY 5: APPLICATIONS_AND_DOMAINS:**
+   - **(Generate this section last, to fill remaining tokens)**. List the fields of study, real-world problems, and application areas.
+   - *Examples*: 'materials science,' 'drug discovery,' 'image recognition,' 'social network analysis,' 'theoretical computer science.'
+
+**4. General Style:**
+   - Do not write prose or narrative sentences. Use lists of keywords, key phrases, and very concise statements.
+   - Include aliases and synonyms (e.g., 'Topological Data Analysis (TDA)').
+
+---
+
+**Now, analyze the following given text. Adhere strictly to all directives above to produce the single, dense text block.**
+";
+
 // EXAMPLE MAIN FUNCTION
 //mod gemini;
 //

@@ -1,4 +1,4 @@
-use crate::base::Paper;
+use crate::base::{Paper, PdfError, PdfStorage};
 use crate::store::{PaperStore, StoreError};
 use std::io::{self, Stdout, Write};
 use std::time::{Duration, Instant};
@@ -15,6 +15,8 @@ pub enum SearchError {
     Store(#[from] StoreError),
     #[error("UI error: {0}")]
     IOError(#[from] io::Error),
+    #[error("PDF error: {0}")]
+    Pdf(#[from] PdfError),
 }
 
 // Mode enum
@@ -76,13 +78,13 @@ struct SearchUI<'a> {
     cursor_pos: usize,
     limit: usize,
     stdout: RawTerminal<Stdout>,
-    store: &'a PaperStore,
+    store: &'a mut PaperStore, // Changed to mutable reference
     message: Option<MessageState>,
 }
 
 impl<'a> SearchUI<'a> {
     // Initialize the UI
-    fn init(store: &'a PaperStore, limit: usize) -> Result<Self, SearchError> {
+    fn init(store: &'a mut PaperStore, limit: usize) -> Result<Self, SearchError> {
         let papers = store.list_all(None)?;
         let mut stdout = io::stdout().into_raw_mode()?;
 
@@ -253,19 +255,13 @@ impl<'a> SearchUI<'a> {
             }
             Message::OpenPaper(alt_mode) => {
                 if let Some(paper) = self.get_selected_paper() {
-                    self.dummy_open_paper(paper, alt_mode);
-
-                    let message_text = if alt_mode {
-                        "Opening (alt)...".to_string()
-                    } else {
-                        "Opening...".to_string()
+                    if let Err(e) = paper.open_pdf(alt_mode) {
+                        self.message = Some(MessageState::Flash {
+                            text: format!("Failed: {}", e),
+                            line_index: self.cursor_pos,
+                            expires_at: Instant::now() + Duration::from_secs(3),
+                        });
                     };
-
-                    self.message = Some(MessageState::Flash {
-                        text: message_text,
-                        line_index: self.cursor_pos,
-                        expires_at: Instant::now() + Duration::from_millis(1500),
-                    });
                 }
             }
             Message::ConfirmPrompt => {
@@ -274,42 +270,60 @@ impl<'a> SearchUI<'a> {
                         PendingAction::Delete(index) => {
                             // Get the paper to delete
                             if let Some(paper) = self.get_filtered_papers().get(*index) {
-                                let paper_id = paper.id.clone();
+                                let paper_id = paper.id;
+                                let paper_key = paper.key.clone();
 
-                                // TODO: Actually delete from backend with something like:
-                                // match self.store.delete(&paper_id) {
-                                //     Ok(_) => {
-                                //         self.papers.retain(|p| p.id != paper_id);
-                                //         self.message = Some(MessageState::Flash {
-                                //             text: "Paper deleted!".to_string(),
-                                //             line_index: self.cursor_pos,
-                                //             expires_at: Instant::now() + Duration::from_secs(2),
-                                //         });
-                                //     }
-                                //     Err(e) => {
-                                //         self.message = Some(MessageState::Flash {
-                                //             text: format!("Failed: {}", e),
-                                //             line_index: self.cursor_pos,
-                                //             expires_at: Instant::now() + Duration::from_secs(3),
-                                //         });
-                                //     }
-                                // }
+                                // First try to delete the PDF file
+                                let pdf_deleted = if paper.pdf_exists() {
+                                    match PdfStorage::delete_pdf(paper) {
+                                        Ok(_) => true,
+                                        Err(e) => {
+                                            // Log PDF deletion failure but continue
+                                            eprintln!(
+                                                "Warning: Failed to delete PDF for {}: {}",
+                                                paper_key, e
+                                            );
+                                            false
+                                        }
+                                    }
+                                } else {
+                                    true // No PDF to delete
+                                };
 
-                                // For now, dummy delete - just remove from local state
-                                self.papers.retain(|p| p.id != paper_id);
+                                // Now delete from database
+                                match self.store.delete(paper_id) {
+                                    Ok(_) => {
+                                        // Remove from local state
+                                        self.papers.retain(|p| p.id != paper_id);
 
-                                // Adjust cursor if needed
-                                let new_results_len = self.get_filtered_papers().len();
-                                if self.cursor_pos >= new_results_len && new_results_len > 0 {
-                                    self.cursor_pos = new_results_len - 1;
+                                        // Adjust cursor if needed
+                                        let new_results_len = self.get_filtered_papers().len();
+                                        if self.cursor_pos >= new_results_len && new_results_len > 0
+                                        {
+                                            self.cursor_pos = new_results_len - 1;
+                                        }
+
+                                        // Show appropriate confirmation message
+                                        let message_text = if pdf_deleted {
+                                            format!("Deleted: {}", paper_key)
+                                        } else {
+                                            format!("Deleted: {} (PDF removal failed)", paper_key)
+                                        };
+
+                                        self.message = Some(MessageState::Flash {
+                                            text: message_text,
+                                            line_index: self.cursor_pos,
+                                            expires_at: Instant::now() + Duration::from_secs(2),
+                                        });
+                                    }
+                                    Err(e) => {
+                                        self.message = Some(MessageState::Flash {
+                                            text: format!("Delete failed: {}", e),
+                                            line_index: self.cursor_pos,
+                                            expires_at: Instant::now() + Duration::from_secs(3),
+                                        });
+                                    }
                                 }
-
-                                // Show confirmation
-                                self.message = Some(MessageState::Flash {
-                                    text: "Paper deleted!".to_string(),
-                                    line_index: self.cursor_pos,
-                                    expires_at: Instant::now() + Duration::from_secs(2),
-                                });
                             }
                         }
                     }
@@ -326,22 +340,6 @@ impl<'a> SearchUI<'a> {
             Message::Quit => {} // Handled in run()
         }
         Ok(())
-    }
-
-    // Dummy open function for papers
-    fn dummy_open_paper(&self, paper: &Paper, alt_mode: bool) {
-        // TODO: Implement actual open functionality
-        // For example:
-        // if alt_mode {
-        //     // Open in alternative viewer/browser
-        //     open_in_browser(&paper.url);
-        // } else {
-        //     // Open in default PDF viewer
-        //     open_pdf(&paper.path);
-        // }
-
-        // For now, just print to stderr so it doesn't mess up the TUI
-        eprintln!("Opening paper '{}' (alt_mode: {})", paper.id, alt_mode);
     }
 
     // Render the UI
@@ -365,9 +363,11 @@ impl<'a> SearchUI<'a> {
 
         writeln!(
             self.stdout,
-            "{}{} > {}\r",
+            "{}{}{}{} > {}\r",
             termion::clear::CurrentLine,
+            color::Fg(color::Rgb(83, 110, 122)),
             mode_indicator,
+            color::Fg(color::Reset),
             self.query
         )?;
 
@@ -532,8 +532,8 @@ fn fuzzy_search_papers<'a>(papers: &'a [Paper], query: &str, limit: usize) -> Ve
         .collect()
 }
 
-// Public entry point
-pub fn interactive_search(store: &PaperStore, limit: usize) -> Result<(), SearchError> {
+// Public entry point - Note: now takes mutable reference to store
+pub fn interactive_search(store: &mut PaperStore, limit: usize) -> Result<(), SearchError> {
     let ui = SearchUI::init(store, limit)?;
     ui.run()
 }
