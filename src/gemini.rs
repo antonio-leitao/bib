@@ -1,3 +1,10 @@
+use crate::{blog_done, blog_warning, blog_working};
+use futures::future::join_all;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tokio::fs;
+
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -27,8 +34,10 @@ pub enum GeminiError {
     EmbeddingMissing,
     #[error("No file uploaded. Call upload_file() first")]
     NoFileUploaded,
-    #[error("Could not find schema tag in {0} in the response")]
-    NoSchemaTag(String),
+    #[error("Could not read pdf file: {0}")]
+    FileReadError(String),
+    #[error("Could deserialize output into schema: {0}")]
+    DeserializationError(String),
 }
 // --- Embedding task types ---
 
@@ -82,18 +91,22 @@ struct FileUploadResponse {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct FileInfo {
+pub struct FileInfo {
     mime_type: String,
     uri: String,
 }
 
 // --- Structs for content generation ---
-
+#[derive(Serialize)]
+pub struct SystemInstruction<'a> {
+    pub parts: Vec<Part<'a>>,
+}
 #[derive(Serialize)]
 struct GenerateContentRequest<'a> {
     contents: Vec<Content<'a>>,
     #[serde(rename = "generationConfig", skip_serializing_if = "Option::is_none")]
     generation_config: Option<GenerationConfig>,
+    pub system_instruction: Option<SystemInstruction<'a>>,
 }
 
 #[derive(Serialize)]
@@ -280,6 +293,7 @@ async fn ask_about_file(
 
     // Step 3: Generate content using the uploaded file's URI
     let request_body = GenerateContentRequest {
+        system_instruction: None,
         contents: vec![Content {
             parts: vec![
                 Part::Text { text: prompt },
@@ -466,6 +480,191 @@ The goal is to maximize the chances that this paper is found by a wide variety o
 
 **Now, analyze the given text. Adhere strictly to all directives above to produce the single, dense text block in the summary_text field**
 ";
+
+const RAG_PROMPT:&str="r## Research Paper Analysis System Prompt
+
+You are a specialized research assistant that analyzes academic papers to find content relevant to user queries. You will receive:
+
+1. **Multiple PDF research papers** uploaded via the Gemini File API
+2. **A user query/prompt** describing what information they're seeking
+
+## Your Task
+
+Thoroughly analyze each uploaded research paper to identify content that addresses the user's query. You MUST respond with structured JSON that follows the exact schema provided in the API configuration.
+
+## Analysis Process
+
+1. **Read each paper completely** - Don't just scan abstracts and conclusions
+2. **Identify relevant sections** - Look for content that directly or indirectly addresses the user's query
+3. **Assess relevance strength** - Determine how well each section answers the query
+4. **Note page locations** - Track exactly where relevant information appears
+5. **Rank papers** - Order by overall relevance to the query
+
+## Critical Output Requirements
+
+**You MUST return your response as structured JSON that conforms to the provided response schema. Do not include any text outside the JSON structure. Do not wrap the JSON in markdown code blocks.**
+
+The response will automatically follow this structure:
+- `query_summary`: Brief restatement of what the user is asking
+- `relevant_papers`: Array of relevant papers ordered by relevance score (highest first)
+- `papers_not_relevant`: Array of papers that don't address the query  
+- `overall_assessment`: Summary of how well the collection addresses the query
+
+For each relevant paper, include:
+- `filename`: Exact filename of the PDF
+- `relevance_score`: Number between 0.0-1.0 indicating relevance strength
+- `relevance_explanation`: Brief explanation of relevance and contribution
+- `page_ranges`: Array of strings indicating where relevant content appears (format: 5, 10-15, etc.)
+- `key_findings`: 1-2 sentence summary of most relevant findings
+
+## Relevance Scoring Guidelines
+
+- **0.9-1.0**: Paper directly addresses the query with substantial relevant content
+- **0.7-0.8**: Paper addresses key aspects of the query with good detail  
+- **0.5-0.6**: Paper partially addresses the query or provides background context
+- **0.3-0.4**: Paper tangentially relates to the query
+- **0.0-0.2**: Paper is not relevant to the query
+
+## Page Range Format
+
+- Single pages: `5`
+- Consecutive pages: `10-15`  
+- Multiple ranges: `[1-3, 8, 12-14, 20-25]`
+- Always use actual page numbers from the PDF
+
+## Analysis Guidelines
+
+1. **Be thorough but precise** - Include all relevant content but don't inflate relevance
+2. **Cite specific page ranges** - Users need to know exactly where to look
+3. **Explain relevance clearly** - Help users understand why each paper matters
+4. **Handle edge cases** - If no papers are relevant, return empty arrays with explanations
+5. **Consider different types of relevance** - Methodological, theoretical, empirical, etc.
+6. **Check all sections** - Introduction, methods, results, discussion, appendices
+
+## Special Considerations
+
+- **Multi-part queries**: Address each component and note which papers cover which parts
+- **Interdisciplinary queries**: Look for connections across different research domains  
+- **Methodological queries**: Pay special attention to methods sections and supplementary materials
+- **Recent developments**: Note if papers discuss cutting-edge or emerging topics
+
+## Critical Reminders
+
+- **ONLY return valid JSON** - No additional text or markdown formatting
+- **Order relevant_papers by relevance_score** (highest first)
+- **Use exact PDF filenames** as provided
+- **Provide precise page ranges** for all relevant content
+- **Be concise but informative** in explanations";
+
+// Response structs that match our schema
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResearchPaperAnalysis {
+    pub query_summary: String,
+    pub relevant_papers: Vec<RelevantPaper>,
+    pub papers_not_relevant: Vec<NonRelevantPaper>,
+    pub overall_assessment: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RelevantPaper {
+    pub filename: String,
+    pub relevance_score: f64,
+    pub relevance_explanation: String,
+    pub page_ranges: Vec<String>,
+    pub key_findings: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NonRelevantPaper {
+    pub filename: String,
+    pub reason: String,
+}
+
+/// Creates the complete schema for research paper analysis response
+fn create_research_paper_analysis_schema() -> serde_json::Value {
+    // Schema for individual relevant papers
+    let relevant_paper_schema = create_object_schema(&[
+        ("filename", "Exact filename of the PDF paper"),
+        (
+            "relevance_explanation",
+            "Brief explanation of why this paper is relevant and what it contributes",
+        ),
+        (
+            "key_findings",
+            "1-2 sentence summary of the most relevant findings from this paper",
+        ),
+    ]);
+
+    // Add page_ranges as array of strings and relevance_score as number
+    let mut relevant_paper_props = relevant_paper_schema["properties"]
+        .as_object()
+        .unwrap()
+        .clone();
+    relevant_paper_props.insert(
+        "page_ranges".to_string(),
+        serde_json::json!({
+            "type": "array",
+            "items": {
+                "type": "string",
+                "description": "Page range where relevant content appears (e.g., '5', '10-15')"
+            },
+            "description": "Array of page ranges where the query is addressed"
+        }),
+    );
+
+    relevant_paper_props.insert(
+        "relevance_score".to_string(),
+        serde_json::json!({
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Relevance score between 0.0 and 1.0"
+        }),
+    );
+
+    let relevant_paper_schema_final = serde_json::json!({
+        "type": "object",
+        "properties": relevant_paper_props,
+        "required": ["filename", "relevance_score", "relevance_explanation", "page_ranges", "key_findings"]
+    });
+
+    // Schema for non-relevant papers
+    let non_relevant_paper_schema = create_object_schema(&[
+        ("filename", "Exact filename of the PDF paper"),
+        (
+            "reason",
+            "Brief explanation of why this paper is not relevant",
+        ),
+    ]);
+
+    // Main schema combining everything
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "query_summary": {
+                "type": "string",
+                "description": "Brief restatement of what the user is asking"
+            },
+            "relevant_papers": {
+                "type": "array",
+                "items": relevant_paper_schema_final,
+                "description": "Array of relevant papers ordered by relevance score (highest first)"
+            },
+            "papers_not_relevant": {
+                "type": "array",
+                "items": non_relevant_paper_schema,
+                "description": "Array of papers that don't address the query"
+            },
+            "overall_assessment": {
+                "type": "string",
+                "description": "Summary of how well the collection of papers addresses the user's query"
+            }
+        },
+        "required": ["query_summary", "relevant_papers", "papers_not_relevant", "overall_assessment"],
+        "propertyOrdering": ["query_summary", "relevant_papers", "papers_not_relevant", "overall_assessment"]
+    })
+}
+
 /// Main Gemini client that handles file uploads, content generation, and embeddings
 pub struct Gemini {
     client: Client,
@@ -519,7 +718,7 @@ impl Gemini {
         let bibtex = parsed
             .get("bibtex_entry")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| GeminiError::NoSchemaTag("bibtex_entry".to_string()))?;
+            .ok_or_else(|| GeminiError::DeserializationError("bibtex_entry".to_string()))?;
 
         Ok(bibtex.to_string())
     }
@@ -548,7 +747,7 @@ impl Gemini {
         let summary = parsed
             .get("summary_text")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| GeminiError::NoSchemaTag("suumary_text".to_string()))?;
+            .ok_or_else(|| GeminiError::DeserializationError("sumary_text".to_string()))?;
 
         let v = get_text_embedding(
             &self.client,
@@ -582,6 +781,198 @@ impl Gemini {
         let magnitude = squared_magnitude.sqrt();
         let v = v.into_iter().map(|x| x / magnitude).collect();
         Ok(v)
+    }
+    pub async fn concurrent_upload_pdfs_with_progress(
+        &self,
+        pdf_paths: &[PathBuf],
+    ) -> Vec<FileInfo> {
+        // Create a single overall progress bar
+        let overall_pb = ProgressBar::new(pdf_paths.len() as u64);
+        overall_pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{prefix:.green.bold} [{bar:30}] {pos}/{len} PDFs ({msg})")
+                .expect("Invalid progress template")
+                .progress_chars("=> "),
+        );
+        overall_pb.set_prefix(format!("{:>12}", "Uploading"));
+        overall_pb.set_message("preparing...");
+
+        // Track failed uploads for reporting at the end
+        let failed_uploads = Arc::new(Mutex::new(Vec::new()));
+
+        // Create a future for each PDF upload
+        let upload_futures = pdf_paths.into_iter().map(|pdf_path| {
+            let client = self.client.clone();
+            let api_key = self.api_key.to_string();
+            let overall_pb = overall_pb.clone();
+            let failed_uploads = failed_uploads.clone();
+            let pdf_path = pdf_path.clone();
+
+            async move {
+                let fallback_name = format!("{}", pdf_path.display());
+                let filename = pdf_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&fallback_name);
+
+                // Read the file asynchronously
+                let file_bytes = match fs::read(&pdf_path).await {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        failed_uploads
+                            .lock()
+                            .unwrap()
+                            .push((filename.to_string(), e.to_string()));
+                        overall_pb.inc(1);
+                        return None;
+                    }
+                };
+
+                // Upload the file
+                let result = upload_file(&client, &api_key, file_bytes, "application/pdf").await;
+
+                let result = match result {
+                    Ok(file_info) => {
+                        // Update progress bar message with the last uploaded file
+                        overall_pb.set_message(format!("Uploaded {}", filename));
+                        overall_pb.inc(1);
+                        Some(file_info)
+                    }
+                    Err(e) => {
+                        failed_uploads
+                            .lock()
+                            .unwrap()
+                            .push((filename.to_string(), e.to_string()));
+                        overall_pb.inc(1);
+                        None
+                    }
+                };
+
+                result
+            }
+        });
+
+        // Execute all uploads concurrently
+        let results: Vec<Option<FileInfo>> = join_all(upload_futures).await;
+
+        // Collect successful uploads
+        let successful_uploads: Vec<FileInfo> = results
+            .into_iter()
+            .filter_map(|file_info| file_info)
+            .collect();
+
+        let total_uploaded = successful_uploads.len();
+        let total_requested = pdf_paths.len();
+
+        // Clear the progress bar
+        overall_pb.finish_and_clear();
+
+        // Show final status
+        if total_uploaded == total_requested {
+            blog_done!(
+                "Upload",
+                "Successfully uploaded all {} PDFs",
+                total_uploaded
+            );
+        } else {
+            // Show which files failed
+            let failed = failed_uploads.lock().unwrap();
+            for (filename, error) in failed.iter() {
+                blog_warning!("Upload Failed", "{}: {}", filename, error);
+            }
+
+            blog_warning!(
+                "Upload",
+                "Uploaded {} out of {} PDFs",
+                total_uploaded,
+                total_requested
+            );
+        }
+
+        successful_uploads
+    }
+
+    /// Analyzes multiple research papers for relevance to a user query
+    /// Returns structured, deserialized results
+    pub async fn analyze_research_papers(
+        &self,
+        user_prompt: &str,
+        file_infos: &[&FileInfo], // Multiple files
+    ) -> Result<ResearchPaperAnalysis, GeminiError> {
+        // Create the schema automatically
+        let schema = create_research_paper_analysis_schema();
+
+        // Create generation config with our schema
+        let generation_config = GenerationConfig {
+            response_mime_type: Some("application/json".to_string()),
+            response_schema: Some(schema),
+        };
+
+        // System instruction that explains the behavior
+        let system_instruction = SystemInstruction {
+            parts: vec![Part::Text { text: RAG_PROMPT }],
+        };
+
+        // Build parts vector with the prompt and all files
+        let mut parts = vec![Part::Text { text: user_prompt }];
+
+        // Add each file to the parts
+        for file_info in file_infos {
+            parts.push(Part::FileData {
+                file_data: FileData {
+                    mime_type: &file_info.mime_type,
+                    file_uri: &file_info.uri,
+                },
+            });
+        }
+
+        // Create the request
+        let request_body = GenerateContentRequest {
+            contents: vec![Content { parts }],
+            generation_config: Some(generation_config),
+            system_instruction: Some(system_instruction),
+        };
+
+        // Send request to Gemini
+        let response = self
+            .client
+            .post(MODEL_URL)
+            .header("X-Goog-Api-Key", self.api_key.clone())
+            .header(header::CONTENT_TYPE, "application/json")
+            .json(&request_body)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(GeminiError::ApiError(format!(
+                "Content generation failed: {}",
+                error_text
+            )));
+        }
+
+        // Parse the response
+        let gen_response: GenerateContentResponse = response.json().await?;
+
+        // Extract the JSON text from the response
+        let json_text = gen_response
+            .candidates
+            .and_then(|mut c| c.pop())
+            .and_then(|c| c.content)
+            .and_then(|co| co.parts)
+            .and_then(|mut p| p.pop())
+            .and_then(|p| p.text)
+            .ok_or(GeminiError::ContentMissing)?;
+
+        // Deserialize the structured JSON into our struct
+        let analysis: ResearchPaperAnalysis = serde_json::from_str(&json_text).map_err(|e| {
+            GeminiError::DeserializationError(format!(
+                "Failed to deserialize response: {}. Raw response: {}",
+                e, json_text
+            ))
+        })?;
+
+        Ok(analysis)
     }
 }
 

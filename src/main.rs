@@ -59,7 +59,7 @@ enum Commands {
         /// Search query
         query: String,
         /// Maximum number of different papers to pass to LLM
-        #[arg(short = 'n', long, default_value = "30")]
+        #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
     },
     /// Show database statistics

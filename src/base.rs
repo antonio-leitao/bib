@@ -1,5 +1,5 @@
 use crate::bibtex::{self, BibtexError};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
@@ -254,6 +254,15 @@ macro_rules! blog {
 }
 
 #[macro_export]
+macro_rules! blog_warning {
+    ($category:expr, $($arg:tt)*) => {{
+        use termion::color;
+        let formatted_args = format!($($arg)*);
+        println!("{}{:>12}{} {}",color::Fg(color::Yellow), $category,color::Fg(color::Reset), formatted_args);
+    }};
+}
+
+#[macro_export]
 macro_rules! blog_working {
     ($category:expr, $($arg:tt)*) => {{
         use termion::color;
@@ -279,9 +288,9 @@ impl UI {
         let pb = ProgressBar::new(total_size);
         pb.set_style(
             ProgressStyle::default_bar()
-                .template("{prefix:.blue.bold} {spinner:.blue} [{bar:30.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                .template("{prefix:.blue.bold} {spinner:.blue} [{bar:30}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
                 .expect("Invalid progress template")
-                .progress_chars("█▉▊▋▌▍▎▏  "),
+                .progress_chars("=> "),
         );
 
         let domain = Url::parse(url)
@@ -292,6 +301,25 @@ impl UI {
         pb.set_prefix(format!("{:>12}", "Downloading"));
         pb.set_message(format!("from {}", domain));
         pb
+    }
+    /// Creates a progress bar for PDF upload operations
+    pub fn pdf_upload_progress(filename: &str) -> ProgressBar {
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("{prefix:.blue.bold} {spinner:.blue} {msg}")
+                .expect("Invalid spinner template")
+                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+        );
+        pb.set_prefix(format!("{:>12}", "Uploading"));
+        pb.set_message(format!("Reading {}", filename));
+        pb.enable_steady_tick(Duration::from_millis(80));
+        pb
+    }
+
+    /// Creates a multi-progress container for multiple uploads
+    pub fn multi_progress() -> MultiProgress {
+        MultiProgress::new()
     }
 
     pub fn spinner(category: &str, message: &str) -> ProgressBar {
