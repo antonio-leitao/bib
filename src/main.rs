@@ -69,7 +69,7 @@ enum Commands {
 /// Get the default database path
 fn get_db_path() -> PathBuf {
     let mut db_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    db_path.push(".papers");
+    db_path.push(".bib");
     std::fs::create_dir_all(&db_path).ok();
     db_path.push("papers.db");
     db_path

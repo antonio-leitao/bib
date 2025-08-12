@@ -149,7 +149,7 @@ bib stats
 Bib stores data in your home directory:
 
 ```
-~/.papers/
+~/.bib/
 ├── papers.db       # SQLite database with metadata and embeddings
 └── pdfs/          # PDF files organized by paper ID
 ```
@@ -194,7 +194,7 @@ Solution: Ensure your `.env` file contains a valid Gemini API key.
 
 **Database Errors**
 
-- Ensure `~/.papers/` directory has write permissions
+- Ensure `~/.bib/` directory has write permissions
 - Check disk space availability
 
 ## License

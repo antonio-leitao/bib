@@ -110,7 +110,7 @@ impl PdfStorage {
     /// Get the base papers directory
     fn get_base_dir() -> PathBuf {
         let mut base_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-        base_dir.push(".papers");
+        base_dir.push(".bib");
         base_dir
     }
 
