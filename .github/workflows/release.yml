@@ -49,9 +49,6 @@ jobs:
           # Copy binary
           cp target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }} dist/${{ env.PROJECT_NAME }}/
 
-          # Copy completion files (they should already exist in the repo)
-          cp -r completions dist/${{ env.PROJECT_NAME }}/
-
           # Copy documentation
           [ -f README.md ] && cp README.md dist/${{ env.PROJECT_NAME }}/
           [ -f LICENSE ] && cp LICENSE dist/${{ env.PROJECT_NAME }}/
@@ -129,7 +126,7 @@ jobs:
             ## Features
             - 📚 Smart paper import from arXiv, URLs, or local PDFs
             - 🤖 Automatic BibTeX extraction using AI
-            - 🔍 Fuzzy search with shell completions
+            - 🔍 Fuzzy search
             - 📦 SQLite storage with deduplication
 
             ## Changes
@@ -194,11 +191,6 @@ jobs:
             def install
               # Install binary
               bin.install "bib"
-              
-              # Install completions - Homebrew handles the rest automatically
-              bash_completion.install "completions/bib.bash" => "bib"
-              zsh_completion.install "completions/_bib" => "_bib"
-              fish_completion.install "completions/bib.fish" => "bib.fish"
               
               # Install docs
               doc.install "README.md" if File.exist?("README.md")

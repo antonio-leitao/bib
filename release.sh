@@ -63,20 +63,8 @@ cargo test --all --quiet || echo "No tests found, skipping..."
 echo "4. Building release to verify..."
 cargo build --release
 
-# Verify completion files exist
-echo "5. Verifying completion files..."
-if [ ! -f "completions/_bib" ] || [ ! -f "completions/bib.bash" ] || [ ! -f "completions/bib.fish" ]; then
-    echo -e "${RED}Error: Completion files missing!${NC}"
-    echo "Expected files:"
-    echo "  - completions/_bib (zsh)"
-    echo "  - completions/bib.bash"
-    echo "  - completions/bib.fish"
-    exit 1
-fi
-echo -e "${GREEN}✓${NC} All completion files present"
-
 # Update CHANGELOG.md
-echo "6. Updating CHANGELOG.md..."
+echo "5. Updating CHANGELOG.md..."
 if [ ! -f CHANGELOG.md ]; then
     cat > CHANGELOG.md << EOF
 # Changelog
@@ -134,7 +122,7 @@ fi
 
 # Commit changes
 echo
-echo "7. Committing version changes..."
+echo "6. Committing version changes..."
 git add Cargo.toml Cargo.lock CHANGELOG.md completions/
 git commit -m "Release version $NEW_VERSION
 
@@ -143,13 +131,13 @@ git commit -m "Release version $NEW_VERSION
 - Include shell completions"
 
 # Create and push tag
-echo "8. Creating git tag v$NEW_VERSION..."
+echo "7. Creating git tag v$NEW_VERSION..."
 git tag -a "v$NEW_VERSION" -m "Release version $NEW_VERSION
 
 See CHANGELOG.md for details."
 
 # Push changes and tag
-echo "9. Pushing to remote..."
+echo "8. Pushing to remote..."
 git push origin master
 git push origin "v$NEW_VERSION"
 
@@ -166,5 +154,3 @@ echo -e "${BLUE}https://github.com/$(git remote get-url origin | sed 's/.*github
 echo
 echo "Once complete, users can install with:"
 echo -e "  ${GREEN}brew install antonio-leitao/taps/bib${NC}"
-echo
-echo "Completions will be automatically installed and work immediately!"
