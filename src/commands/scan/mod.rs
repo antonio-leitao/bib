@@ -1,9 +1,11 @@
-use crate::base::{Embedding, Paper, PdfStorage, UI};
-use crate::gemini::{Gemini, PaperAnalysis};
-use crate::store::PaperStore;
-use crate::{blog_done, blog_warning};
-use anyhow::Result;
-use dotzilla;
+mod error;
+pub use error::ScanError;
+
+use crate::ai::{Gemini, PaperAnalysis};
+use crate::core::{Embedding, Paper};
+use crate::pdf::PdfStorage;
+use crate::storage::PaperStore;
+use crate::ui::{blog_done, blog_warning, UI};
 use futures;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::cmp::Ordering;
@@ -15,38 +17,6 @@ use termion::color;
 use tokio::fs;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-
-fn similarity_threshold_filter(
-    vectors: Vec<Embedding>,
-    query: &[f32],
-    k: usize,
-    threshold: f32,
-) -> Vec<(u128, f32)> {
-    if vectors.is_empty() || k == 0 {
-        return Vec::new();
-    }
-
-    let mut scores: Vec<_> = vectors
-        .into_iter()
-        .map(|e| (e.id, dotzilla::dot(query, &e.coords)))
-        .collect();
-
-    let k = k.min(scores.len());
-
-    // Partition so that top k elements are at the beginning
-    scores.select_nth_unstable_by(k - 1, |a, b| {
-        b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal)
-    });
-
-    // Sort only the top k elements
-    scores[..k].sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
-    scores.truncate(k);
-
-    scores
-        .into_iter()
-        .filter(|(_, sim)| *sim >= threshold)
-        .collect()
-}
 
 #[derive(Debug)]
 struct AnalysisResult {
@@ -68,25 +38,20 @@ async fn analyze_single_paper(
     let paper_id = paper.id;
     let paper_title = paper.title.clone();
 
-    // Try to analyze the paper, converting any error to AnalysisError
     let result = async {
-        // Read PDF file
         let pdf_path = PdfStorage::get_pdf_path(&paper.key, paper.id);
         let file_bytes = fs::read(&pdf_path)
             .await
             .map_err(|e| format!("Failed to read PDF: {}", e))?;
 
-        // Create a new Gemini instance for this paper
         let mut paper_ai =
             Gemini::new().map_err(|e| format!("Failed to create Gemini client: {}", e))?;
 
-        // Upload file to Gemini
         let file_handle = paper_ai
             .upload_file(file_bytes, "application/pdf")
             .await
             .map_err(|e| format!("Failed to upload PDF: {}", e))?;
 
-        // Analyze the paper
         let analysis = paper_ai
             .analyze_research_paper(&query, &file_handle)
             .await
@@ -96,14 +61,12 @@ async fn analyze_single_paper(
     }
     .await;
 
-    // Update progress bar regardless of success/failure
     let mut progress_guard = progress.lock().await;
-    progress_guard.1 += 1; // Increment completed count
+    progress_guard.1 += 1;
     let completed = progress_guard.1;
 
     match result {
         Ok(analysis) => {
-            // Update progress bar with success
             progress_guard.0.set_position(completed as u64);
             progress_guard.0.set_message(format!(
                 "analyzed: {}",
@@ -113,7 +76,6 @@ async fn analyze_single_paper(
             Ok(AnalysisResult { paper_id, analysis })
         }
         Err(error) => {
-            // Update progress bar with error indication
             progress_guard.0.set_position(completed as u64);
             progress_guard
                 .0
@@ -134,9 +96,43 @@ fn fit_string_to_length(input: &str, max_length: usize) -> String {
     result
 }
 
-pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: f32) -> Result<()> {
-    let spinner = UI::spinner("Generating", "Query embedding...");
+fn similarity_threshold_filter(
+    vectors: Vec<Embedding>,
+    query: &[f32],
+    k: usize,
+    threshold: f32,
+) -> Vec<(u128, f32)> {
+    if vectors.is_empty() || k == 0 {
+        return Vec::new();
+    }
 
+    let mut scores: Vec<_> = vectors
+        .into_iter()
+        .map(|e| (e.id, dotzilla::dot(query, &e.coords)))
+        .collect();
+
+    let k = k.min(scores.len());
+
+    scores.select_nth_unstable_by(k - 1, |a, b| {
+        b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal)
+    });
+
+    scores[..k].sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+    scores.truncate(k);
+
+    scores
+        .into_iter()
+        .filter(|(_, sim)| *sim >= threshold)
+        .collect()
+}
+
+pub async fn execute(
+    store: &mut PaperStore,
+    query: &str,
+    limit: usize,
+    threshold: f32,
+) -> Result<(), ScanError> {
+    let spinner = UI::spinner("Generating", "Query embedding...");
     let ai = Gemini::new()?;
     let query_vector = ai.generate_query_embedding(query).await?;
     UI::finish_with_message(spinner, "Generated", "query embedding.");
@@ -156,17 +152,14 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
 
     if total_papers == 0 {
         blog_warning!("No papers", "to analyze");
-        return Ok(());
+        return Err(ScanError::NoPapersFound);
     }
 
-    // Configure stagger delay based on number of papers
-    // Goal: Space out API calls to avoid rate limits (~60 requests/minute for Gemini free tier)
-    // Each paper needs 2 requests (upload + analyze)
     let stagger_delay_ms = match total_papers {
-        1..=5 => 300,    // Few papers: 0.5 sec between starts
-        6..=10 => 1300,  // Medium: 1.5 sec between starts
-        11..=20 => 3000, // Many: 3 sec between starts
-        _ => 5000,       // Lots: 5 sec between starts
+        1..=5 => 300,
+        6..=10 => 1300,
+        11..=20 => 3000,
+        _ => 5000,
     };
 
     blog_done!(
@@ -175,7 +168,6 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
         stagger_delay_ms
     );
 
-    // Create progress bar for analysis
     let pb = ProgressBar::new(total_papers as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -186,10 +178,8 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
     pb.set_prefix(format!("{:>12}", "Analyzing"));
     pb.set_message("starting...");
 
-    // Shared progress state: (progress_bar, completed_count, total_count)
     let progress = Arc::new(Mutex::new((pb.clone(), 0usize, total_papers)));
 
-    // Create futures for all paper analyses with staggered starts
     let query_string = query.to_string();
     let analysis_futures: Vec<_> = papers
         .clone()
@@ -198,12 +188,9 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
         .map(|(index, paper)| {
             let query_clone = query_string.clone();
             let progress_clone = Arc::clone(&progress);
-
-            // Calculate stagger delay for this paper
             let delay = (index as u64) * stagger_delay_ms;
 
             tokio::spawn(async move {
-                // Stagger the start of this analysis
                 if delay > 0 {
                     sleep(Duration::from_millis(delay)).await;
                 }
@@ -212,13 +199,10 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
         })
         .collect();
 
-    // Wait for all analyses to complete
     let results = futures::future::join_all(analysis_futures).await;
 
-    // Finish progress bar
     pb.finish_and_clear();
 
-    // Separate successful and failed analyses
     let mut successful_analyses = Vec::new();
     let mut failed_analyses = Vec::new();
 
@@ -232,7 +216,6 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
         }
     }
 
-    // Report results
     blog_done!(
         "Analyzed",
         "{}/{} papers successfully",

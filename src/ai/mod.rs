@@ -1,7 +1,9 @@
+mod error;
+pub use error::AiError;
+
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use thiserror::Error;
 
 const UPLOAD_URL: &str = "https://generativelanguage.googleapis.com/upload/v1beta/files";
 const MODEL_URL: &str =
@@ -9,42 +11,13 @@ const MODEL_URL: &str =
 const EMBEDDING_URL: &str =
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent";
 
-#[derive(Error, Debug)]
-pub enum GeminiError {
-    #[error("GOOGLE_API_KEY not found in environment variables")]
-    ApiKeyMissing,
-    #[error("File I/O error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Network or HTTP request error: {0}")]
-    Network(#[from] reqwest::Error),
-    #[error("Failed to parse JSON response: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("Gemini API returned an error: {0}")]
-    ApiError(String),
-    #[error("Could not find generated text in the API response")]
-    ContentMissing,
-    #[error("Could not find embedding in the API response")]
-    EmbeddingMissing,
-    #[error("No file uploaded. Call upload_file() first")]
-    NoFileUploaded,
-    #[error("Could not read pdf file: {0}")]
-    FileReadError(String),
-    #[error("Could deserialize output into schema: {0}")]
-    DeserializationError(String),
-}
-// --- Embedding task types ---
-
+// API request/response structs...
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EmbeddingTaskType {
     RetrievalQuery,
     RetrievalDocument,
-    // SemanticSimilarity,
-    // Classification,
-    // Clustering,
 }
-
-// --- Structs for embedding request/response ---
 
 #[derive(Serialize)]
 struct EmbedContentRequest<'a> {
@@ -164,7 +137,7 @@ async fn upload_file(
     api_key: &str,
     file_bytes: Vec<u8>,
     mime_type: &str,
-) -> Result<FileInfo, GeminiError> {
+) -> Result<FileInfo, AiError> {
     // The key insight: send file content directly, not as multipart form
     let response = client
         .post(UPLOAD_URL)
@@ -180,7 +153,7 @@ async fn upload_file(
             .text()
             .await
             .unwrap_or_else(|_| "Could not read error body".to_string());
-        return Err(GeminiError::ApiError(format!(
+        return Err(AiError::ApiResponse(format!(
             "File upload failed with status {}: {}",
             status, error_text
         )));
@@ -195,9 +168,9 @@ async fn upload_file(
 }
 
 /// Retrieves the API key from the environment.
-fn get_api_key() -> Result<String, GeminiError> {
+fn get_api_key() -> Result<String, AiError> {
     dotenvy::dotenv().ok();
-    std::env::var("GOOGLE_API_KEY").map_err(|_| GeminiError::ApiKeyMissing)
+    std::env::var("GOOGLE_API_KEY").map_err(|_| AiError::ApiKeyMissing)
 }
 
 // --- Public API Functions ---
@@ -264,21 +237,12 @@ fn create_array_schema(item_properties: &[(&str, &str)]) -> serde_json::Value {
 }
 
 async fn ask_about_file(
-    // file_bytes: Vec<u8>,
-    // mime_type: &str,
     client: &Client,
     api_key: &str,
     file_info: &FileInfo,
     prompt: &str,
     response_schema: Option<serde_json::Value>,
-) -> Result<String, GeminiError> {
-    // let api_key = get_api_key()?;
-    // let client = Client::new();
-
-    // Step 1: Upload the file
-    // let file_info = upload_file(&client, &api_key, file_bytes, mime_type).await?;
-
-    // Step 2: Create generation config if schema is provided
+) -> Result<String, AiError> {
     let generation_config = response_schema.map(|schema| GenerationConfig {
         response_mime_type: Some("application/json".to_string()),
         response_schema: Some(schema),
@@ -311,7 +275,7 @@ async fn ask_about_file(
 
     if !response.status().is_success() {
         let error_text = response.text().await?;
-        return Err(GeminiError::ApiError(format!(
+        return Err(AiError::ApiResponse(format!(
             "Content generation failed: {}",
             error_text
         )));
@@ -326,7 +290,7 @@ async fn ask_about_file(
         .and_then(|co| co.parts)
         .and_then(|mut p| p.pop())
         .and_then(|p| p.text)
-        .ok_or(GeminiError::ContentMissing)
+        .ok_or(AiError::EmptyResponse)
 }
 
 // --- Public API Functions ---
@@ -360,7 +324,7 @@ async fn get_text_embedding(
     text: &str,
     task_type: Option<EmbeddingTaskType>,
     output_dimensionality: Option<u32>,
-) -> Result<Vec<f32>, GeminiError> {
+) -> Result<Vec<f32>, AiError> {
     // let api_key = get_api_key()?;
     // let client = Client::new();
 
@@ -382,7 +346,7 @@ async fn get_text_embedding(
 
     if !response.status().is_success() {
         let error_text = response.text().await?;
-        return Err(GeminiError::ApiError(format!(
+        return Err(AiError::ApiResponse(format!(
             "Embedding request failed: {}",
             error_text
         )));
@@ -393,7 +357,7 @@ async fn get_text_embedding(
     embed_response
         .embedding
         .map(|e| e.values)
-        .ok_or(GeminiError::EmbeddingMissing)
+        .ok_or(AiError::StructuredOutputFailed("embedding".to_string()))
 }
 
 const BIBTEX_PROMPT: &str = r#"You are tasked with creating a complete and correctly formatted BibTeX entry from the content of a research article PDF. Follow these steps carefully:
@@ -582,7 +546,6 @@ fn create_paper_evaluation_schema() -> serde_json::Value {
     })
 }
 
-/// Main Gemini client that handles file uploads, content generation, and embeddings
 pub struct Gemini {
     client: Client,
     api_key: String,
@@ -590,10 +553,9 @@ pub struct Gemini {
 }
 
 impl Gemini {
-    /// Create a new Gemini client instance
-    pub fn new() -> Result<Self, GeminiError> {
+    pub fn new() -> Result<Self, AiError> {
         dotenvy::dotenv().ok();
-        let api_key = std::env::var("GOOGLE_API_KEY").map_err(|_| GeminiError::ApiKeyMissing)?;
+        let api_key = std::env::var("GOOGLE_API_KEY").map_err(|_| AiError::ApiKeyMissing)?;
 
         Ok(Self {
             client: Client::new(),
@@ -602,23 +564,41 @@ impl Gemini {
         })
     }
 
-    /// Upload a file to Gemini and store the file handle for later use
     pub async fn upload_file(
         &mut self,
         file_bytes: Vec<u8>,
         mime_type: &str,
-    ) -> Result<FileInfo, GeminiError> {
-        let file_handle = upload_file(&self.client, &self.api_key, file_bytes, mime_type).await?;
-        self.uploaded_file = Some(file_handle.clone());
-        Ok(file_handle)
+    ) -> Result<FileInfo, AiError> {
+        let response = self
+            .client
+            .post(UPLOAD_URL)
+            .header("X-Goog-Api-Key", &self.api_key)
+            .header(header::CONTENT_TYPE, mime_type)
+            .body(file_bytes)
+            .send()
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Could not read error body".to_string());
+            return Err(AiError::ApiResponse(format!(
+                "File upload failed with status {}: {}",
+                status, error_text
+            )));
+        }
+
+        let response_text = response.text().await?;
+        let upload_response: FileUploadResponse = serde_json::from_str(&response_text)?;
+
+        self.uploaded_file = Some(upload_response.file.clone());
+        Ok(upload_response.file)
     }
 
-    /// Extract BibTeX from the uploaded file using AI
-    pub async fn generate_bibtex(&self) -> Result<String, GeminiError> {
-        let file_info = self
-            .uploaded_file
-            .as_ref()
-            .ok_or(GeminiError::NoFileUploaded)?;
+    pub async fn generate_bibtex(&self) -> Result<String, AiError> {
+        let file_info = self.uploaded_file.as_ref().ok_or(AiError::NoFileUploaded)?;
 
         let schema = create_object_schema(&[("bibtex_entry", "The complete BibTeX entry")]);
 
@@ -630,21 +610,19 @@ impl Gemini {
             Some(schema),
         )
         .await?;
+
         let parsed: Value = serde_json::from_str(&response)?;
 
         let bibtex = parsed
             .get("bibtex_entry")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| GeminiError::DeserializationError("bibtex_entry".to_string()))?;
+            .ok_or_else(|| AiError::StructuredOutputFailed("bibtex_entry".to_string()))?;
 
         Ok(bibtex.to_string())
     }
-    /// Generate paper summary from file using AI
-    pub async fn generate_paper_embedding(&self) -> Result<Vec<f32>, GeminiError> {
-        let file_info = self
-            .uploaded_file
-            .as_ref()
-            .ok_or(GeminiError::NoFileUploaded)?;
+
+    pub async fn generate_paper_embedding(&self) -> Result<Vec<f32>, AiError> {
+        let file_info = self.uploaded_file.as_ref().ok_or(AiError::NoFileUploaded)?;
 
         let schema = create_object_schema(&[(
             "summary_text",
@@ -659,12 +637,13 @@ impl Gemini {
             Some(schema),
         )
         .await?;
+
         let parsed: Value = serde_json::from_str(&response)?;
 
         let summary = parsed
             .get("summary_text")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| GeminiError::DeserializationError("sumary_text".to_string()))?;
+            .ok_or_else(|| AiError::StructuredOutputFailed("summary_text".to_string()))?;
 
         let v = get_text_embedding(
             &self.client,
@@ -674,15 +653,20 @@ impl Gemini {
             Some(786),
         )
         .await?;
+
         let squared_magnitude = dotzilla::dot(&v, &v);
         if squared_magnitude == 0.0 {
-            return Err(GeminiError::ContentMissing);
+            return Err(AiError::EmbeddingFailed(
+                "Zero magnitude vector".to_string(),
+            ));
         }
+
         let magnitude = squared_magnitude.sqrt();
         let v = v.into_iter().map(|x| x / magnitude).collect();
         Ok(v)
     }
-    pub async fn generate_query_embedding(&self, text: &str) -> Result<Vec<f32>, GeminiError> {
+
+    pub async fn generate_query_embedding(&self, text: &str) -> Result<Vec<f32>, AiError> {
         let v = get_text_embedding(
             &self.client,
             &self.api_key,
@@ -691,10 +675,14 @@ impl Gemini {
             Some(786),
         )
         .await?;
+
         let squared_magnitude = dotzilla::dot(&v, &v);
         if squared_magnitude == 0.0 {
-            return Err(GeminiError::ContentMissing);
+            return Err(AiError::EmbeddingFailed(
+                "Zero magnitude vector".to_string(),
+            ));
         }
+
         let magnitude = squared_magnitude.sqrt();
         let v = v.into_iter().map(|x| x / magnitude).collect();
         Ok(v)
@@ -706,7 +694,7 @@ impl Gemini {
         &self,
         user_prompt: &str,
         file_info: &FileInfo, // Multiple files
-    ) -> Result<PaperAnalysis, GeminiError> {
+    ) -> Result<PaperAnalysis, AiError> {
         // Create the schema automatically
         let schema = create_paper_evaluation_schema();
 
@@ -750,7 +738,7 @@ impl Gemini {
 
         if !response.status().is_success() {
             let error_text = response.text().await?;
-            return Err(GeminiError::ApiError(format!(
+            return Err(AiError::ApiResponse(format!(
                 "Content generation failed: {}",
                 error_text
             )));
@@ -767,11 +755,11 @@ impl Gemini {
             .and_then(|co| co.parts)
             .and_then(|mut p| p.pop())
             .and_then(|p| p.text)
-            .ok_or(GeminiError::ContentMissing)?;
+            .ok_or(AiError::EmptyResponse)?;
 
         // Deserialize the structured JSON into our struct
         let analysis: PaperAnalysis = serde_json::from_str(&json_text).map_err(|e| {
-            GeminiError::DeserializationError(format!(
+            AiError::StructuredOutputFailed(format!(
                 "Failed to deserialize response: {}. Raw response: {}",
                 e, json_text
             ))

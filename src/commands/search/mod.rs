@@ -1,5 +1,9 @@
-use crate::base::{Paper, PdfError, PdfStorage};
-use crate::store::{PaperStore, StoreError};
+mod error;
+pub use error::SearchError;
+
+use crate::core::Paper;
+use crate::pdf::PdfStorage;
+use crate::storage::PaperStore;
 use std::io::{self, Stdout, Write};
 use std::time::{Duration, Instant};
 use sublime_fuzzy::best_match;
@@ -7,19 +11,7 @@ use termion::color;
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
-use thiserror::Error;
 
-#[derive(Error, Debug)]
-pub enum SearchError {
-    #[error("Store error: {0}")]
-    Store(#[from] StoreError),
-    #[error("UI error: {0}")]
-    IOError(#[from] io::Error),
-    #[error("PDF error: {0}")]
-    Pdf(#[from] PdfError),
-}
-
-// Mode enum
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Mode {
     Search,
@@ -35,7 +27,6 @@ impl Mode {
     }
 }
 
-// Message state for displaying feedback and prompts
 enum MessageState {
     Flash {
         text: String,
@@ -49,12 +40,10 @@ enum MessageState {
     },
 }
 
-// Actions that require confirmation
 enum PendingAction {
-    Delete(usize), // paper index in filtered results
+    Delete(usize),
 }
 
-// Message enum for updates (Elm-like architecture)
 enum Message {
     ModeToggle,
     SearchInput(char),
@@ -63,14 +52,13 @@ enum Message {
     BrowseDown,
     YankBibtex,
     DeletePaper,
-    OpenPaper(bool), // bool flag for alt mode
+    OpenPaper(bool),
     ConfirmPrompt,
     CancelPrompt,
     ClearMessage,
     Quit,
 }
 
-// Main UI struct that holds all state
 struct SearchUI<'a> {
     papers: Vec<Paper>,
     query: String,
@@ -78,17 +66,14 @@ struct SearchUI<'a> {
     cursor_pos: usize,
     limit: usize,
     stdout: RawTerminal<Stdout>,
-    store: &'a mut PaperStore, // Changed to mutable reference
+    store: &'a mut PaperStore,
     message: Option<MessageState>,
 }
 
 impl<'a> SearchUI<'a> {
-    // Initialize the UI
     fn init(store: &'a mut PaperStore, limit: usize) -> Result<Self, SearchError> {
         let papers = store.list_all(None)?;
         let mut stdout = io::stdout().into_raw_mode()?;
-
-        // Hide cursor
         write!(stdout, "{}", termion::cursor::Hide)?;
 
         let mut ui = SearchUI {
@@ -102,18 +87,14 @@ impl<'a> SearchUI<'a> {
             message: None,
         };
 
-        // Initial render
         ui.view()?;
-
         Ok(ui)
     }
 
-    // Main event loop
     fn run(mut self) -> Result<(), SearchError> {
         let stdin = io::stdin();
 
         for key in stdin.keys() {
-            // Check for expired flash messages
             if let Some(MessageState::Flash { expires_at, .. }) = &self.message {
                 if Instant::now() >= *expires_at {
                     self.message = None;
@@ -127,7 +108,7 @@ impl<'a> SearchUI<'a> {
                     self.update(msg)?;
                     self.view()?;
                 }
-                None => {} // No action needed
+                None => {}
             }
         }
         self.cleanup()?;
@@ -498,7 +479,6 @@ impl<'a> SearchUI<'a> {
         }
     }
 
-    // Cleanup when exiting
     fn cleanup(&mut self) -> Result<(), SearchError> {
         write!(
             self.stdout,
@@ -536,8 +516,7 @@ fn fuzzy_search_papers<'a>(papers: &'a [Paper], query: &str, limit: usize) -> Ve
         .collect()
 }
 
-// Public entry point - Note: now takes mutable reference to store
-pub fn interactive_search(store: &mut PaperStore, limit: usize) -> Result<(), SearchError> {
+pub fn execute(store: &mut PaperStore, limit: usize) -> Result<(), SearchError> {
     let ui = SearchUI::init(store, limit)?;
     ui.run()
 }
