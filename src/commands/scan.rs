@@ -13,7 +13,7 @@ use std::time::Duration;
 use termion;
 use termion::color;
 use tokio::fs;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 fn similarity_threshold_filter(
@@ -64,14 +64,7 @@ async fn analyze_single_paper(
     paper: Paper,
     query: String,
     progress: Arc<Mutex<(ProgressBar, usize, usize)>>,
-    semaphore: Arc<Semaphore>,
 ) -> Result<AnalysisResult, AnalysisError> {
-    // Acquire semaphore permit to control concurrency
-    let _permit = semaphore.acquire().await.map_err(|e| AnalysisError {
-        paper_id: paper.id,
-        error: format!("Failed to acquire semaphore: {}", e),
-    })?;
-
     let paper_id = paper.id;
     let paper_title = paper.title.clone();
 
@@ -83,7 +76,7 @@ async fn analyze_single_paper(
             .await
             .map_err(|e| format!("Failed to read PDF: {}", e))?;
 
-        // Create a new Gemini instance for this paper (since upload_file takes &mut self)
+        // Create a new Gemini instance for this paper
         let mut paper_ai =
             Gemini::new().map_err(|e| format!("Failed to create Gemini client: {}", e))?;
 
@@ -107,7 +100,6 @@ async fn analyze_single_paper(
     let mut progress_guard = progress.lock().await;
     progress_guard.1 += 1; // Increment completed count
     let completed = progress_guard.1;
-    let _total = progress_guard.2;
 
     match result {
         Ok(analysis) => {
@@ -160,32 +152,26 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
 
     let id_list: Vec<u128> = relevant_papers.into_iter().map(|(id, _)| id).collect();
     let papers = store.get_by_ids(&id_list)?;
-
-    // Limit to 8 papers for testing (can be removed or made configurable)
-    let papers_to_analyze: Vec<_> = papers.iter().take(8).cloned().collect();
-    let total_papers = papers_to_analyze.len();
+    let total_papers = papers.len();
 
     if total_papers == 0 {
         blog_warning!("No papers", "to analyze");
         return Ok(());
     }
 
-    // Configure rate limiting based on number of papers
-    // Gemini free tier: ~60 requests/minute, each paper needs 2 requests (upload + analyze)
-    let (max_concurrent, stagger_delay_ms) = match total_papers {
-        1..=3 => (2, 1000),  // Few papers: 2 concurrent, 1 sec delay
-        4..=8 => (2, 2000),  // Medium: 2 concurrent, 2 sec delay
-        9..=15 => (3, 3000), // Many: 3 concurrent, 3 sec delay
-        _ => (3, 4000),      // Lots: 3 concurrent, 4 sec delay
+    // Configure stagger delay based on number of papers
+    // Goal: Space out API calls to avoid rate limits (~60 requests/minute for Gemini free tier)
+    // Each paper needs 2 requests (upload + analyze)
+    let stagger_delay_ms = match total_papers {
+        1..=5 => 300,    // Few papers: 0.5 sec between starts
+        6..=10 => 1300,  // Medium: 1.5 sec between starts
+        11..=20 => 3000, // Many: 3 sec between starts
+        _ => 5000,       // Lots: 5 sec between starts
     };
 
-    // Create semaphore to limit concurrent API calls
-    let semaphore = Arc::new(Semaphore::new(max_concurrent));
-
     blog_done!(
-        "Rate limit",
-        "Max {} concurrent, {}ms delay between starts",
-        max_concurrent,
+        "Concurrency",
+        "All papers concurrent with {}ms stagger delay",
         stagger_delay_ms
     );
 
@@ -205,23 +191,23 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
 
     // Create futures for all paper analyses with staggered starts
     let query_string = query.to_string();
-    let analysis_futures: Vec<_> = papers_to_analyze
+    let analysis_futures: Vec<_> = papers
+        .clone()
         .into_iter()
         .enumerate()
         .map(|(index, paper)| {
             let query_clone = query_string.clone();
             let progress_clone = Arc::clone(&progress);
-            let semaphore_clone = Arc::clone(&semaphore);
 
-            // Stagger the start of each task
+            // Calculate stagger delay for this paper
             let delay = (index as u64) * stagger_delay_ms;
 
             tokio::spawn(async move {
-                // Initial stagger delay
+                // Stagger the start of this analysis
                 if delay > 0 {
                     sleep(Duration::from_millis(delay)).await;
                 }
-                analyze_single_paper(paper, query_clone, progress_clone, semaphore_clone).await
+                analyze_single_paper(paper, query_clone, progress_clone).await
             })
         })
         .collect();
@@ -257,7 +243,7 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
     // Sort successful analyses by score (higher is better) and filter out score 0
     let mut successful_analyses: Vec<_> = successful_analyses
         .into_iter()
-        .filter(|result| result.analysis.score > 0.2)
+        .filter(|result| result.analysis.score > 0.25)
         .collect();
     successful_analyses.sort_by(|a, b| {
         b.analysis
@@ -294,13 +280,13 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
                     color::Fg(color::Reset)
                 );
 
-                // Display score and explanation with indentation
-                println!(
-                    "      Score: {}{:.1}/10{}",
-                    color::Fg(color::Red),
-                    result.analysis.score,
-                    color::Fg(color::Reset)
-                );
+                // // Display score and explanation with indentation
+                // println!(
+                //     "      Score: {}{:.1}/10{}",
+                //     color::Fg(color::Red),
+                //     result.analysis.score,
+                //     color::Fg(color::Reset)
+                // );
 
                 // Wrap and indent the explanation
                 let explanation_width = (width as usize).saturating_sub(6); // 6 spaces for indentation
@@ -317,7 +303,7 @@ pub async fn scan(store: &mut PaperStore, query: &str, limit: usize, threshold: 
             }
         }
     } else {
-        println!("\n❌ No relevant papers found with score > 0");
+        println!("\n× No relevant papers found with score > 0.2");
     }
 
     // Report any errors
