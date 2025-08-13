@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
-use commands::base::interactive_search;
 use commands::find::find;
+use commands::scan::scan;
+use commands::search::interactive_search;
 use std::path::PathBuf;
 use std::process;
 
@@ -21,9 +22,11 @@ pub enum AppError {
     #[error("Store error: {0}")]
     Store(#[from] store::StoreError),
     #[error("Search error: {0}")]
-    SearchError(#[from] commands::base::SearchError),
+    SearchError(#[from] commands::search::SearchError),
     #[error("Find error: {0}")]
     FindError(String),
+    #[error("Semantic search error: {0}")]
+    SemanticSearch(#[from] commands::find::SemanticSearchError),
 }
 
 #[derive(Parser)]
@@ -47,20 +50,34 @@ enum Commands {
         notes: Option<String>,
     },
 
-    /// Search papers using fuzzy matching
+    /// Search all papers using fuzzy matching
     Search {
         /// Maximum number of results to show
         #[arg(short = 'n', long, default_value = "10")]
         limit: usize,
     },
 
-    /// Interactive search papers using fuzzy matching
+    /// Find papers based on a semantic query
     Find {
+        /// Search query
+        query: String,
+        /// Maximum number of results to show
+        #[arg(short = 'n', long, default_value = "10")]
+        limit: usize,
+        /// Maximum number of different papers to pass to LLM
+        #[arg(short = 't', long, default_value = "0.7")]
+        threshold: f32,
+    },
+    /// Deep scan of biblioogrpahy using RAG and llms for specific query
+    Scan {
         /// Search query
         query: String,
         /// Maximum number of different papers to pass to LLM
         #[arg(short = 'n', long, default_value = "20")]
         limit: usize,
+        /// Maximum number of different papers to pass to LLM
+        #[arg(short = 't', long, default_value = "0.7")]
+        threshold: f32,
     },
     /// Show database statistics
     Stats,
@@ -109,7 +126,18 @@ async fn main() {
         Commands::Search { limit } => {
             interactive_search(&mut store, limit).map_err(|e| AppError::SearchError(e))
         }
-        Commands::Find { query, limit } => find(&mut store, &query, limit)
+        Commands::Find {
+            query,
+            limit,
+            threshold,
+        } => find(&mut store, &query, limit, threshold)
+            .await
+            .map_err(|e| AppError::FindError(e.to_string())),
+        Commands::Scan {
+            query,
+            limit,
+            threshold,
+        } => scan(&mut store, &query, limit, threshold)
             .await
             .map_err(|e| AppError::FindError(e.to_string())),
         Commands::Stats => show_stats(&store),

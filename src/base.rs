@@ -1,5 +1,5 @@
 use crate::bibtex::{self, BibtexError};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
@@ -301,25 +301,6 @@ impl UI {
         pb.set_prefix(format!("{:>12}", "Downloading"));
         pb.set_message(format!("from {}", domain));
         pb
-    }
-    /// Creates a progress bar for PDF upload operations
-    pub fn pdf_upload_progress(filename: &str) -> ProgressBar {
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("{prefix:.blue.bold} {spinner:.blue} {msg}")
-                .expect("Invalid spinner template")
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
-        );
-        pb.set_prefix(format!("{:>12}", "Uploading"));
-        pb.set_message(format!("Reading {}", filename));
-        pb.enable_steady_tick(Duration::from_millis(80));
-        pb
-    }
-
-    /// Creates a multi-progress container for multiple uploads
-    pub fn multi_progress() -> MultiProgress {
-        MultiProgress::new()
     }
 
     pub fn spinner(category: &str, message: &str) -> ProgressBar {
