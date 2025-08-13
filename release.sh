@@ -123,7 +123,7 @@ fi
 # Commit changes
 echo
 echo "6. Committing version changes..."
-git add Cargo.toml Cargo.lock CHANGELOG.md completions/
+git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "Release version $NEW_VERSION
 
 - Update version to $NEW_VERSION
