@@ -1,59 +1,135 @@
-pub mod macros;
-
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
-use url::Url;
 
-pub use macros::*;
+pub struct StatusUI;
 
-pub struct UI;
+impl StatusUI {
+    // Status symbols
+    const SUCCESS: &'static str = "✓";
+    const WARNING: &'static str = "⚠";
+    const ERROR: &'static str = "✗";
+    const INFO: &'static str = "•";
 
-impl UI {
-    pub fn download_progress(total_size: u64, url: &str) -> ProgressBar {
-        let pb = ProgressBar::new(total_size);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{prefix:.blue.bold} {spinner:.blue} [{bar:30}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
-                .expect("Invalid progress template")
-                .progress_chars("=> "),
-        );
-
-        let domain = Url::parse(url)
-            .ok()
-            .and_then(|u| u.domain().map(|d| d.to_string()))
-            .unwrap_or_else(|| "source".to_string());
-
-        pb.set_prefix(format!("{:>12}", "Downloading"));
-        pb.set_message(format!("from {}", domain));
-        pb
+    pub fn success(message: &str) {
+        println!("   {} {}", Self::SUCCESS, message);
     }
 
-    pub fn spinner(category: &str, message: &str) -> ProgressBar {
+    pub fn warning(message: &str) {
+        println!("   {} {}", Self::WARNING, message);
+    }
+
+    pub fn error(message: &str) {
+        println!("   {} {}", Self::ERROR, message);
+    }
+
+    pub fn info(message: &str) {
+        println!("   {} {}", Self::INFO, message);
+    }
+
+    // Simple spinner
+    pub fn spinner(message: &str) -> ProgressBar {
         let pb = ProgressBar::new_spinner();
         pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("{prefix:.blue.bold} {spinner:.blue} {msg}")
-                .expect("Invalid spinner template")
-                .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+            ProgressStyle::with_template("   {spinner} {msg}")
+                .unwrap()
+                .tick_strings(&["|", "/", "-", "\\"]),
         );
-        pb.set_prefix(format!("{:>12}", category));
         pb.set_message(message.to_string());
-        pb.enable_steady_tick(Duration::from_millis(80));
+        pb.enable_steady_tick(Duration::from_millis(100));
         pb
     }
 
-    pub fn finish_with_message(pb: ProgressBar, completed_category: &str, message: &str) {
+    // Simple bar progress
+    pub fn progress_bar(message: &str, total: u64) -> ProgressBar {
+        let pb = ProgressBar::new(total);
+        pb.set_style(
+            ProgressStyle::with_template("   • {msg} [{bar:20}] {pos}/{len}")
+                .unwrap()
+                .progress_chars("=> "),
+        );
+        pb.set_message(message.to_string());
+        pb
+    }
+
+    // Download progress with bytes
+    pub fn download_progress(message: &str, total_bytes: u64) -> ProgressBar {
+        let pb = ProgressBar::new(total_bytes);
+        pb.set_style(
+            ProgressStyle::with_template("   • {msg} [{bar:20}] {bytes}/{total_bytes}")
+                .unwrap()
+                .progress_chars("=> "),
+        );
+        pb.set_message(message.to_string());
+        pb
+    }
+
+    // Concurrent progress bar for scan command
+    pub fn concurrent_progress(message: &str, total: u64) -> ProgressBar {
+        let pb = ProgressBar::new(total);
+        pb.set_style(
+            ProgressStyle::with_template("   • Scanning [{bar:20}] {pos}/{len} ({msg})")
+                .unwrap()
+                .progress_chars("=> "),
+        );
+        pb.set_message(message.to_string());
+        pb
+    }
+
+    // Finish spinner with status
+    pub fn finish_spinner_success(pb: ProgressBar, message: &str) {
         pb.finish_and_clear();
-        blog_done!(completed_category, "{}", message);
+        Self::success(message);
+    }
+
+    pub fn finish_spinner_error(pb: ProgressBar, message: &str) {
+        pb.finish_and_clear();
+        Self::error(message);
+    }
+
+    pub fn finish_spinner_warning(pb: ProgressBar, message: &str) {
+        pb.finish_and_clear();
+        Self::warning(message);
+    }
+
+    pub fn finish_spinner_info(pb: ProgressBar, message: &str) {
+        pb.finish_and_clear();
+        Self::info(message);
+    }
+
+    // Finish progress bar with status
+    pub fn finish_progress_success(pb: ProgressBar, message: &str) {
+        pb.finish_and_clear();
+        Self::success(message);
+    }
+
+    pub fn finish_progress_error(pb: ProgressBar, message: &str) {
+        pb.finish_and_clear();
+        Self::error(message);
+    }
+
+    pub fn finish_progress_warning(pb: ProgressBar, message: &str) {
+        pb.finish_and_clear();
+        Self::warning(message);
+    }
+
+    pub fn finish_progress_info(pb: ProgressBar, message: &str) {
+        pb.finish_and_clear();
+        Self::info(message);
+    }
+
+    // Format file size utility
+    pub fn format_file_size(bytes: usize) -> String {
+        if bytes > 1024 * 1024 {
+            format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+        } else if bytes > 1024 {
+            format!("{:.1} KB", bytes as f64 / 1024.0)
+        } else {
+            format!("{} bytes", bytes)
+        }
     }
 }
 
+// Legacy function for compatibility
 pub fn error_message(err: &str) {
-    println!(
-        "{}{:>12}{} {}",
-        termion::color::Fg(termion::color::Red),
-        "Error",
-        termion::color::Fg(termion::color::Reset),
-        err
-    );
+    StatusUI::error(err);
 }

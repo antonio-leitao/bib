@@ -5,9 +5,9 @@ use crate::ai::{Gemini, PaperAnalysis};
 use crate::core::{Embedding, Paper};
 use crate::pdf::PdfStorage;
 use crate::storage::PaperStore;
-use crate::ui::{blog_done, blog_warning, UI};
+use crate::ui::StatusUI;
 use futures;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -132,18 +132,17 @@ pub async fn execute(
     limit: usize,
     threshold: f32,
 ) -> Result<(), ScanError> {
-    let spinner = UI::spinner("Generating", "Query embedding...");
+    let spinner = StatusUI::spinner("Generating query embedding...");
     let ai = Gemini::new()?;
     let query_vector = ai.generate_query_embedding(query).await?;
-    UI::finish_with_message(spinner, "Generated", "query embedding.");
+    StatusUI::finish_spinner_success(spinner, "Generated query embedding");
 
-    let spinner = UI::spinner("Searching", "data for relevant papers...");
+    let spinner = StatusUI::spinner("Searching data for relevant papers...");
     let vectors = store.load_all_embeddings()?;
     let relevant_papers = similarity_threshold_filter(vectors, &query_vector, limit, threshold);
-    UI::finish_with_message(
+    StatusUI::finish_spinner_success(
         spinner,
-        "Found",
-        &format!("{} relevant papers.", relevant_papers.len()),
+        &format!("Found {} relevant papers", relevant_papers.len()),
     );
 
     let id_list: Vec<u128> = relevant_papers.into_iter().map(|(id, _)| id).collect();
@@ -151,7 +150,7 @@ pub async fn execute(
     let total_papers = papers.len();
 
     if total_papers == 0 {
-        blog_warning!("No papers", "to analyze");
+        StatusUI::warning("No papers to analyze");
         return Err(ScanError::NoPapersFound);
     }
 
@@ -162,20 +161,12 @@ pub async fn execute(
         _ => 5000,
     };
 
-    blog_done!(
-        "Concurrency",
-        "All papers concurrent with {}ms stagger delay",
-        stagger_delay_ms
-    );
+    StatusUI::info(&format!(
+        "Analyzing {} papers concurrently with {}ms stagger delay",
+        total_papers, stagger_delay_ms
+    ));
 
-    let pb = ProgressBar::new(total_papers as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{prefix:.blue.bold} [{bar:30}] {pos}/{len} papers ({msg})")
-            .expect("Invalid progress template")
-            .progress_chars("=> "),
-    );
-    pb.set_prefix(format!("{:>12}", "Analyzing"));
+    let pb = StatusUI::concurrent_progress("Analyzing", total_papers as u64);
     pb.set_message("starting...");
 
     let progress = Arc::new(Mutex::new((pb.clone(), 0usize, total_papers)));
@@ -211,17 +202,16 @@ pub async fn execute(
             Ok(Ok(analysis)) => successful_analyses.push(analysis),
             Ok(Err(error)) => failed_analyses.push(error),
             Err(join_error) => {
-                blog_warning!("Task panic", "{}", join_error);
+                StatusUI::warning(&format!("Task panic: {}", join_error));
             }
         }
     }
 
-    blog_done!(
-        "Analyzed",
-        "{}/{} papers successfully",
+    StatusUI::success(&format!(
+        "Analyzed {}/{} papers successfully",
         successful_analyses.len(),
         total_papers
-    );
+    ));
 
     // Sort successful analyses by score (higher is better) and filter out score 0
     let mut successful_analyses: Vec<_> = successful_analyses
@@ -237,6 +227,8 @@ pub async fn execute(
 
     // Display successful analyses
     if !successful_analyses.is_empty() {
+        println!(); // Add spacing
+
         // Get terminal width for proper formatting
         let (width, _) = termion::terminal_size()?;
 
@@ -255,7 +247,7 @@ pub async fn execute(
                 let available_width = width.saturating_sub(page_display_len as u16 + 2);
 
                 // Display paper info with page ranges
-                print!("{}", paper.display(available_width));
+                print!("   • {}", paper.display(available_width));
                 println!(
                     " {}{}{}",
                     color::Fg(color::Yellow),
@@ -263,21 +255,13 @@ pub async fn execute(
                     color::Fg(color::Reset)
                 );
 
-                // // Display score and explanation with indentation
-                // println!(
-                //     "      Score: {}{:.1}/10{}",
-                //     color::Fg(color::Red),
-                //     result.analysis.score,
-                //     color::Fg(color::Reset)
-                // );
-
                 // Wrap and indent the explanation
-                let explanation_width = (width as usize).saturating_sub(6); // 6 spaces for indentation
+                let explanation_width = (width as usize).saturating_sub(5); // 8 spaces for indentation
                 let wrapped_explanation =
                     wrap_text(&result.analysis.explanation, explanation_width);
                 for line in wrapped_explanation {
                     println!(
-                        "    {}{}{}",
+                        "     {}{}{}",
                         color::Fg(color::Rgb(83, 110, 122)),
                         line,
                         color::Fg(color::Reset)
@@ -286,17 +270,15 @@ pub async fn execute(
             }
         }
     } else {
-        println!("\n× No relevant papers found with score > 0.2");
+        StatusUI::warning("No relevant papers found with score > 0.25");
     }
 
     // Report any errors
     if !failed_analyses.is_empty() {
-        println!("{}", "=".repeat(80));
-        println!("⚠️  FAILED ANALYSES");
-        println!("{}", "=".repeat(80));
-
+        println!(); // Add spacing
+        StatusUI::warning("FAILED ANALYSES:");
         for error in failed_analyses {
-            blog_warning!("Failed", "Paper ID {}: {}", error.paper_id, error.error);
+            StatusUI::error(&format!("Paper ID {}: {}", error.paper_id, error.error));
         }
     }
 

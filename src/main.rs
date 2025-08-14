@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-// use std::fmt::Result;
 use std::path::PathBuf;
 use std::process;
 
@@ -15,6 +14,7 @@ mod ui;
 use error::AppError;
 use pdf::PdfStorage;
 use storage::PaperStore;
+use ui::StatusUI;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -74,7 +74,7 @@ async fn main() -> Result<(), AppError> {
     let mut store = match PaperStore::new(&db_path) {
         Ok(store) => store,
         Err(e) => {
-            ui::error_message(&format!(
+            StatusUI::error(&format!(
                 "Failed to initialize database at {}: {}",
                 db_path.display(),
                 e
@@ -104,39 +104,34 @@ async fn main() -> Result<(), AppError> {
         Commands::Stats => show_stats(&store)?,
     };
     Ok(())
-
-    // if let Err(err) = result {
-    //     ui::error_message(&err.to_string());
-    //     // process::exit(1);
-    // }
 }
 
 fn show_stats(store: &PaperStore) -> Result<(), AppError> {
-    println!("\nDatabase Statistics:");
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    println!("\n      Database Statistics:");
+    println!("      ════════════════════════════════");
 
     let count = store.count()?;
-    println!("  Total papers: {}", count);
+    StatusUI::info(&format!("Total papers: {}", count));
 
     let db_path = get_db_path();
     let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
-    println!(
-        "  Database size: {}",
-        PdfStorage::format_file_size(db_size as usize)
-    );
+    StatusUI::info(&format!(
+        "Database size: {}",
+        StatusUI::format_file_size(db_size as usize)
+    ));
 
     let pdf_size = PdfStorage::total_storage_size()?;
-    println!(
-        "  PDF storage: {}",
-        PdfStorage::format_file_size(pdf_size as usize)
-    );
+    StatusUI::info(&format!(
+        "PDF storage: {}",
+        StatusUI::format_file_size(pdf_size as usize)
+    ));
 
     let total_size = db_size + pdf_size;
-    println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    println!(
-        "  Total storage: {}",
-        PdfStorage::format_file_size(total_size as usize)
-    );
+    println!("      ════════════════════════════════");
+    StatusUI::success(&format!(
+        "Total storage: {}",
+        StatusUI::format_file_size(total_size as usize)
+    ));
 
     Ok(())
 }

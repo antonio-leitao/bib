@@ -2,7 +2,7 @@ use super::error::{AddError, DownloadError, InputError};
 use super::sources::{ArxivApi, CrossRefApi};
 use crate::ai::Gemini;
 use crate::bibtex::BibtexParser;
-use crate::ui::{blog, blog_done, UI};
+use crate::ui::StatusUI;
 use arboard::Clipboard;
 use std::fs::File;
 use std::io::Read;
@@ -100,7 +100,7 @@ impl PdfHandler {
         match input_type {
             InputType::ArxivUrl(url) => {
                 let arxiv_id = Self::extract_arxiv_id(&url)?;
-                blog!("Source", "arXiv paper ({})", arxiv_id);
+                StatusUI::info(&format!("Source: arXiv paper ({})", arxiv_id));
 
                 let pdf_url = format!("https://arxiv.org/pdf/{}.pdf", arxiv_id);
                 let bytes = Self::download_pdf(&pdf_url).await?;
@@ -111,7 +111,7 @@ impl PdfHandler {
                 })
             }
             InputType::PdfUrl(url) => {
-                blog!("Source", "PDF URL");
+                StatusUI::info("Source: PDF URL");
                 let bytes = Self::download_pdf(&url).await?;
                 Ok(PdfSource {
                     bytes,
@@ -119,7 +119,7 @@ impl PdfHandler {
                 })
             }
             InputType::PdfPath(path) => {
-                blog!("Source", "local file: {}", path.display());
+                StatusUI::info(&format!("Source: local file: {}", path.display()));
                 let bytes = Self::read_pdf_file(&path)?;
                 Ok(PdfSource {
                     bytes,
@@ -177,15 +177,19 @@ impl PdfHandler {
 
         let total_size = response.content_length().unwrap_or(0);
         let progress_bar = if total_size > 0 {
-            UI::download_progress(total_size, url)
+            let url_obj = Url::parse(url).ok();
+            let domain = url_obj
+                .and_then(|u| u.domain().map(|d| d.to_string()))
+                .unwrap_or_else(|| "source".to_string());
+            StatusUI::download_progress(&format!("Downloading from {}", domain), total_size)
         } else {
-            UI::spinner("Downloading", "PDF content...")
+            StatusUI::spinner("Downloading PDF content...")
         };
 
         let content = response.bytes().await?;
 
-        let size_str = Self::format_file_size(content.len());
-        UI::finish_with_message(progress_bar, "Downloaded", &size_str);
+        let size_str = StatusUI::format_file_size(content.len());
+        StatusUI::finish_progress_success(progress_bar, &format!("Downloaded {}", size_str));
 
         Ok(content.to_vec())
     }
@@ -195,20 +199,10 @@ impl PdfHandler {
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
 
-        let size_str = Self::format_file_size(contents.len());
-        blog_done!("read", "{}", size_str);
+        let size_str = StatusUI::format_file_size(contents.len());
+        StatusUI::success(&format!("Read {}", size_str));
 
         Ok(contents)
-    }
-
-    fn format_file_size(bytes: usize) -> String {
-        if bytes > 1024 * 1024 {
-            format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-        } else if bytes > 1024 {
-            format!("{:.1} KB", bytes as f64 / 1024.0)
-        } else {
-            format!("{} bytes", bytes)
-        }
     }
 }
 
@@ -231,38 +225,36 @@ impl BibtexGenerator {
         pdf_bytes: Vec<u8>,
         arxiv_id: &str,
     ) -> Result<String, AddError> {
-        let spinner = UI::spinner("checking", "for DOI on arXiv...");
+        let spinner = StatusUI::spinner("Checking for DOI on arXiv...");
 
         match ArxivApi::get_doi(arxiv_id).await {
             Ok(Some(doi)) => {
-                UI::finish_with_message(spinner, "Found", &format!("DOI: {}", doi));
+                StatusUI::finish_spinner_success(spinner, &format!("Found DOI: {}", doi));
 
-                let crossref_spinner = UI::spinner("fetching", "official bibtex from DOI...");
+                let crossref_spinner = StatusUI::spinner("Fetching official bibtex from DOI...");
 
                 match CrossRefApi::get_bibtex(&doi).await {
                     Ok(bibtex) => {
                         ai.upload_file(pdf_bytes, "application/pdf").await?;
-                        UI::finish_with_message(
+                        StatusUI::finish_spinner_success(
                             crossref_spinner,
-                            "Retrieved",
-                            "official bibtex from DOI",
+                            "Retrieved official bibtex from DOI",
                         );
                         return Ok(bibtex);
                     }
                     Err(_) => {
-                        UI::finish_with_message(
+                        StatusUI::finish_spinner_warning(
                             crossref_spinner,
-                            "Failed",
-                            "DOI lookup, using AI fallback",
+                            "DOI lookup failed, using AI fallback",
                         );
                     }
                 }
             }
             Ok(None) => {
-                UI::finish_with_message(spinner, "no DOI", "Found on arXiv, using AI");
+                StatusUI::finish_spinner_warning(spinner, "No DOI found on arXiv, using AI");
             }
             Err(_) => {
-                UI::finish_with_message(spinner, "Failed", "arXiv lookup, using AI fallback");
+                StatusUI::finish_spinner_warning(spinner, "arXiv lookup failed, using AI fallback");
             }
         }
 
@@ -276,22 +268,20 @@ impl BibtexGenerator {
         let mut bibtex = Self::generate_bibtex_ai(ai, pdf_bytes).await?;
 
         if let Some(doi) = BibtexParser::extract_doi(&bibtex) {
-            let upgrade_spinner = UI::spinner("upgrading", "bibtex with official version...");
+            let upgrade_spinner = StatusUI::spinner("Upgrading bibtex with official version...");
 
             match CrossRefApi::get_bibtex(&doi).await {
                 Ok(official_bibtex) => {
-                    UI::finish_with_message(
+                    StatusUI::finish_spinner_success(
                         upgrade_spinner,
-                        "upgraded",
-                        "to official bibtex from DOI",
+                        "Upgraded to official bibtex from DOI",
                     );
                     bibtex = official_bibtex;
                 }
                 Err(_) => {
-                    UI::finish_with_message(
+                    StatusUI::finish_spinner_warning(
                         upgrade_spinner,
-                        "failed",
-                        "to upgrade, using AI version",
+                        "Failed to upgrade, using AI version",
                     );
                 }
             }
@@ -301,10 +291,10 @@ impl BibtexGenerator {
     }
 
     async fn generate_bibtex_ai(ai: &mut Gemini, pdf_bytes: Vec<u8>) -> Result<String, AddError> {
-        let spinner = UI::spinner("Extracting", "bibtex using Gemini AI...");
+        let spinner = StatusUI::spinner("Extracting bibtex using Gemini AI...");
         ai.upload_file(pdf_bytes, "application/pdf").await?;
         let bibtex_entry = ai.generate_bibtex().await?;
-        UI::finish_with_message(spinner, "Extracted", "bibtex using Gemini AI");
+        StatusUI::finish_spinner_success(spinner, "Extracted bibtex using Gemini AI");
         Ok(bibtex_entry)
     }
 }

@@ -5,7 +5,7 @@ use crate::ai::Gemini;
 use crate::core::{Embedding, Paper};
 use crate::pdf::PdfStorage;
 use crate::storage::PaperStore;
-use crate::ui::{blog_warning, UI};
+use crate::ui::StatusUI;
 use dotzilla;
 use std::cmp::Ordering;
 use std::io::{self, Stdout, Write};
@@ -438,28 +438,26 @@ pub async fn execute(
     limit: usize,
     threshold: f32,
 ) -> Result<(), FindError> {
-    let spinner = UI::spinner("Generating", "Query embedding...");
+    let spinner = StatusUI::spinner("Generating query embedding...");
     let ai = Gemini::new()?;
     let query_vector = ai.generate_query_embedding(query).await?;
-    UI::finish_with_message(spinner, "Generated", "query embedding.");
+    StatusUI::finish_spinner_success(spinner, "Generated query embedding");
 
-    let spinner = UI::spinner("Searching", "for similar papers...");
+    let spinner = StatusUI::spinner("Searching for similar papers...");
     let vectors = store.load_all_embeddings()?;
     let relevant_scores = similarity_threshold_filter(vectors, &query_vector, limit, threshold);
 
     if relevant_scores.is_empty() {
-        blog_warning!(
-            "No results",
-            "No papers found above threshold {:.2}",
-            threshold
+        StatusUI::finish_spinner_warning(
+            spinner,
+            &format!("No papers found above threshold {:.2}", threshold),
         );
         return Err(FindError::NoResults);
     }
 
-    UI::finish_with_message(
+    StatusUI::finish_spinner_success(
         spinner,
-        "Found",
-        &format!("{} relevant papers.", relevant_scores.len()),
+        &format!("Found {} relevant papers", relevant_scores.len()),
     );
 
     let id_list: Vec<u128> = relevant_scores.iter().map(|(id, _)| *id).collect();
