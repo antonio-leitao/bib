@@ -17,6 +17,10 @@
 
 A command-line bibliography manager with intelligent paper extraction, semantic search, and deep content analysis capabilities.
 
+<p align="center">
+  <img src="assets/demo.gif" alt="bib demo" width="600" align="center">
+</p>
+
 ## Overview
 
 `bib` transforms how researchers manage their paper collections by combining traditional bibliography management with modern language understanding. Beyond simple keyword matching, it understands the conceptual relationships between papers, automatically extracts structured citations, and can analyze paper contents to answer specific research questions.
