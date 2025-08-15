@@ -82,8 +82,29 @@ struct GenerationConfig {
     response_mime_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_schema: Option<serde_json::Value>,
+    // Deterministic parameters
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    top_k: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seed: Option<i32>,
 }
-
+fn create_deterministic_config(
+    response_mime_type: Option<String>,
+    response_schema: Option<serde_json::Value>,
+) -> GenerationConfig {
+    GenerationConfig {
+        response_mime_type,
+        response_schema,
+        temperature: Some(0.0), // Most deterministic
+        top_p: Some(0.1),       // Low randomness
+        top_k: Some(1),         // Greedy decoding
+        seed: Some(12345),      // Fixed seed for consistency
+    }
+}
 #[derive(Serialize)]
 struct Content<'a> {
     parts: Vec<Part<'a>>,
@@ -243,10 +264,12 @@ async fn ask_about_file(
     prompt: &str,
     response_schema: Option<serde_json::Value>,
 ) -> Result<String, AiError> {
-    let generation_config = response_schema.map(|schema| GenerationConfig {
-        response_mime_type: Some("application/json".to_string()),
-        response_schema: Some(schema),
-    });
+    let generation_config = Some(create_deterministic_config(
+        response_schema
+            .as_ref()
+            .map(|_| "application/json".to_string()),
+        response_schema,
+    ));
 
     // Step 3: Generate content using the uploaded file's URI
     let request_body = GenerateContentRequest {
@@ -699,10 +722,10 @@ impl Gemini {
         let schema = create_paper_evaluation_schema();
 
         // Create generation config with our schema
-        let generation_config = GenerationConfig {
-            response_mime_type: Some("application/json".to_string()),
-            response_schema: Some(schema),
-        };
+        let generation_config = Some(create_deterministic_config(
+            Some("application/json".to_string()),
+            Some(schema),
+        ));
 
         // System instruction that explains the behavior
         let system_instruction = SystemInstruction {
@@ -722,7 +745,7 @@ impl Gemini {
         // Create the request
         let request_body = GenerateContentRequest {
             contents: vec![Content { parts }],
-            generation_config: Some(generation_config),
+            generation_config,
             system_instruction: Some(system_instruction),
         };
 

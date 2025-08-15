@@ -33,7 +33,6 @@ struct SemanticSearchUI<'a> {
 enum MessageState {
     Flash {
         text: String,
-        line_index: usize,
         expires_at: Instant,
     },
     Prompt {
@@ -52,6 +51,7 @@ enum Message {
     BrowseDown,
     YankBibtex,
     DeletePaper,
+    PullPdf,
     OpenPaper(bool),
     ConfirmPrompt,
     CancelPrompt,
@@ -123,6 +123,7 @@ impl<'a> SemanticSearchUI<'a> {
             Key::Char('k') | Key::Up => Some(Message::BrowseUp),
             Key::Char('y') => Some(Message::YankBibtex),
             Key::Char('d') => Some(Message::DeletePaper),
+            Key::Char('p') => Some(Message::PullPdf),
             Key::Char('\n') => Some(Message::OpenPaper(false)),
             Key::Char('o') => Some(Message::OpenPaper(true)), // Alt open
             Key::Char('q') | Key::Esc | Key::Ctrl('c') => Some(Message::Quit),
@@ -158,16 +159,55 @@ impl<'a> SemanticSearchUI<'a> {
                         if clipboard.set_text(&paper.bibtex).is_ok() {
                             self.store.touch(paper.id)?;
                             self.message = Some(MessageState::Flash {
-                                text: "BibTeX copied!".to_string(),
-                                line_index: self.cursor_pos,
+                                text: format!("{} BibTeX copied!", StatusUI::SUCCESS),
                                 expires_at: Instant::now() + Duration::from_secs(2),
                             });
                         } else {
                             self.message = Some(MessageState::Flash {
-                                text: "Failed to copy!".to_string(),
-                                line_index: self.cursor_pos,
+                                text: format!("{} Failed to copy!", StatusUI::ERROR),
                                 expires_at: Instant::now() + Duration::from_secs(2),
                             });
+                        }
+                    }
+                }
+            }
+            Message::PullPdf => {
+                if let Some(scored_paper) = self.get_selected_paper() {
+                    let paper = &scored_paper.paper;
+                    let source_path = paper.pdf_path();
+
+                    if !source_path.exists() {
+                        self.message = Some(MessageState::Flash {
+                            text: format!("{} PDF not found for: {}", StatusUI::ERROR, paper.key),
+                            expires_at: Instant::now() + Duration::from_secs(3),
+                        });
+                    } else {
+                        let dest_filename = format!(
+                            "{}_{}.pdf",
+                            paper.key,
+                            &paper.id.to_string()[..5.min(paper.id.to_string().len())]
+                        );
+                        let dest_path = std::env::current_dir()
+                            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                            .join(&dest_filename);
+
+                        match std::fs::copy(&source_path, &dest_path) {
+                            Ok(_) => {
+                                self.message = Some(MessageState::Flash {
+                                    text: format!(
+                                        "{} Pulled: {}",
+                                        StatusUI::SUCCESS,
+                                        dest_filename
+                                    ),
+                                    expires_at: Instant::now() + Duration::from_secs(2),
+                                });
+                            }
+                            Err(e) => {
+                                self.message = Some(MessageState::Flash {
+                                    text: format!("{} Pull failed: {}", StatusUI::ERROR, e),
+                                    expires_at: Instant::now() + Duration::from_secs(3),
+                                });
+                            }
                         }
                     }
                 }
@@ -188,8 +228,7 @@ impl<'a> SemanticSearchUI<'a> {
                         Ok(()) => self.store.touch(paper.id)?,
                         Err(e) => {
                             self.message = Some(MessageState::Flash {
-                                text: format!("Failed: {}", e),
-                                line_index: self.cursor_pos,
+                                text: format!("{} Failed: {}", StatusUI::ERROR, e),
                                 expires_at: Instant::now() + Duration::from_secs(3),
                             });
                         }
@@ -237,21 +276,27 @@ impl<'a> SemanticSearchUI<'a> {
 
                                         // Show appropriate confirmation message
                                         let message_text = if pdf_deleted {
-                                            format!("Deleted: {}", paper_key)
+                                            format!("{} Deleted: {}", StatusUI::SUCCESS, paper_key)
                                         } else {
-                                            format!("Deleted: {} (PDF removal failed)", paper_key)
+                                            format!(
+                                                "{} Deleted: {} (PDF removal failed)",
+                                                StatusUI::WARNING,
+                                                paper_key
+                                            )
                                         };
 
                                         self.message = Some(MessageState::Flash {
                                             text: message_text,
-                                            line_index: self.cursor_pos,
                                             expires_at: Instant::now() + Duration::from_secs(2),
                                         });
                                     }
                                     Err(e) => {
                                         self.message = Some(MessageState::Flash {
-                                            text: format!("Delete failed: {}", e),
-                                            line_index: self.cursor_pos,
+                                            text: format!(
+                                                "{} Delete failed: {}",
+                                                StatusUI::ERROR,
+                                                e
+                                            ),
                                             expires_at: Instant::now() + Duration::from_secs(3),
                                         });
                                     }
@@ -271,7 +316,34 @@ impl<'a> SemanticSearchUI<'a> {
         Ok(())
     }
 
-    // Render the UI
+    // Helper function to format command help
+    fn format_command(&self, cmd: &str) -> String {
+        if let Some(colon_pos) = cmd.find(':') {
+            let key = cmd[..colon_pos].trim();
+            let desc = cmd[colon_pos + 1..].trim();
+
+            format!(
+                "{}{:>9} • {}{}{:<9}{}",
+                color::Fg(color::Rgb(83, 110, 122)),
+                key,
+                color::Fg(color::Reset),
+                color::Fg(color::Rgb(46, 60, 68)),
+                desc,
+                color::Fg(color::Reset)
+            )
+        } else {
+            // No colon, treat as description only
+            format!(
+                "{:>9}{}{}{}",
+                "",
+                color::Fg(color::Rgb(46, 60, 68)),
+                cmd,
+                color::Fg(color::Reset)
+            )
+        }
+    }
+
+    // Updated view method - replace the help section
     fn view(&mut self) -> Result<(), FindError> {
         let (width, _) = termion::terminal_size()?;
         let display_limit = self.papers.len().min(self.limit);
@@ -280,7 +352,7 @@ impl<'a> SemanticSearchUI<'a> {
         // Show header with query
         writeln!(
             self.stdout,
-            "{}{}[SEMANTIC SEARCH] Query: \"{}\"{}\r",
+            "{}{}[SEMANTIC SEARCH] \"{}\"{}\r",
             termion::clear::CurrentLine,
             color::Fg(color::Rgb(83, 110, 122)),
             self.query,
@@ -291,39 +363,23 @@ impl<'a> SemanticSearchUI<'a> {
         for i in 0..display_limit {
             write!(self.stdout, "{}", termion::clear::CurrentLine)?;
 
-            // Check if this line has a message to display
-            let has_message = match &self.message {
-                Some(MessageState::Flash {
-                    line_index, text, ..
-                })
-                | Some(MessageState::Prompt {
+            // Check if this line has a PROMPT message to display (prompts stay inline)
+            let has_prompt = match &self.message {
+                Some(MessageState::Prompt {
                     line_index, text, ..
                 }) => {
                     if *line_index == i {
-                        // Display the message
-                        if matches!(self.message, Some(MessageState::Prompt { .. })) {
-                            // For prompts, replace the entire line
-                            writeln!(self.stdout, "  {}\r", text)?;
-                            true
-                        } else {
-                            // For flash messages, show with checkmark
-                            writeln!(
-                                self.stdout,
-                                "\t✓ {}[{}]{}\r",
-                                color::Fg(color::Green),
-                                text,
-                                color::Fg(color::Reset)
-                            )?;
-                            true
-                        }
+                        // Display the prompt inline
+                        writeln!(self.stdout, "  {}\r", text)?;
+                        true
                     } else {
                         false
                     }
                 }
-                None => false,
+                _ => false,
             };
 
-            if !has_message {
+            if !has_prompt {
                 // Normal display
                 if i == self.cursor_pos {
                     write!(self.stdout, "* ")?;
@@ -353,33 +409,80 @@ impl<'a> SemanticSearchUI<'a> {
             writeln!(self.stdout, "\r")?;
         }
 
-        // Show hidden results count if applicable
+        // Buffer line: Show flash message OR hidden count
         write!(self.stdout, "{}", termion::clear::CurrentLine)?;
-        if hidden_count > 0 {
-            writeln!(
-                self.stdout,
-                "{}  ... {} more results hidden{}\r",
-                color::Fg(color::Rgb(83, 110, 122)),
-                hidden_count,
-                color::Fg(color::Reset)
-            )?;
-        } else {
-            writeln!(self.stdout, "\r")?; // Empty line
+        match &self.message {
+            Some(MessageState::Flash { text, .. }) => {
+                // Show flash message in the buffer line
+                writeln!(self.stdout, "  {}\r", text)?;
+            }
+            _ => {
+                // Show hidden results count if applicable
+                if hidden_count > 0 {
+                    writeln!(
+                        self.stdout,
+                        "{}  ... {} more results hidden{}\r",
+                        color::Fg(color::Rgb(46, 60, 68)),
+                        hidden_count,
+                        color::Fg(color::Reset)
+                    )?;
+                } else {
+                    writeln!(self.stdout, "\r")?; // Empty line
+                }
+            }
         }
 
-        // Show commands
+        // Show commands in 2-row format
         write!(self.stdout, "{}", termion::clear::CurrentLine)?;
-        let commands = match &self.message {
-            Some(MessageState::Prompt { .. }) => "Y: Confirm | N/Esc: Cancel",
-            _ => "Enter/o: Open | j/k: Navigate | y: Copy BibTeX | d: Delete | q/Esc: Quit",
-        };
-        writeln!(self.stdout, "  {}\r", commands)?;
+        match &self.message {
+            Some(MessageState::Prompt { .. }) => {
+                writeln!(
+                    self.stdout,
+                    "  {}{:>9} • {}{}{:<9}{} {}{:>9} • {}{}{:<9}{}\r",
+                    color::Fg(color::Rgb(83, 110, 122)),
+                    "Y",
+                    color::Fg(color::Reset),
+                    color::Fg(color::Rgb(46, 60, 68)),
+                    "Confirm",
+                    color::Fg(color::Reset),
+                    color::Fg(color::Rgb(83, 110, 122)),
+                    "N/Esc",
+                    color::Fg(color::Reset),
+                    color::Fg(color::Rgb(46, 60, 68)),
+                    "Cancel",
+                    color::Fg(color::Reset)
+                )?;
+                writeln!(self.stdout, "{}\r", termion::clear::CurrentLine)?;
+            }
+            _ => {
+                // First row with 4 columns
+                let row1 = format!(
+                    "  {} {} {} {}",
+                    self.format_command("Enter/o: Open"),
+                    self.format_command("Tab: Search"),
+                    self.format_command("j/k: Navigate"),
+                    self.format_command("y: Copy BibTeX")
+                );
+                writeln!(self.stdout, "{}\r", row1)?;
 
-        // Move cursor back up
+                // Second row with 4 columns
+                write!(self.stdout, "{}", termion::clear::CurrentLine)?;
+                let row2 = format!(
+                    "  {} {} {} {}",
+                    self.format_command("d: Delete"),
+                    self.format_command("p: Pull PDF"),
+                    self.format_command("q/Esc: Quit"),
+                    self.format_command("")
+                );
+                writeln!(self.stdout, "{}\r", row2)?;
+            }
+        }
+
+        // Move cursor back up (now accounting for 4 lines total: header + papers + buffer + 2 help rows)
         write!(
             self.stdout,
             "{}",
-            termion::cursor::Up(self.limit as u16 + 3)
+            termion::cursor::Up(self.limit as u16 + 4)
         )?;
         self.stdout.flush()?;
         Ok(())

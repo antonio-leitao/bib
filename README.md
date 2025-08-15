@@ -15,27 +15,35 @@
 
 # bib
 
-A command-line research paper manager with AI-powered BibTeX extraction, semantic search, and intelligent paper analysis.
+A command-line bibliography manager with intelligent paper extraction, semantic search, and deep content analysis capabilities.
 
-## Features
+## Overview
 
-- **Smart Paper Import**: Add papers from arXiv URLs, direct PDF links, or local files
-- **Automatic BibTeX Extraction**: Uses Gemini AI to extract and generate proper BibTeX entries
-- **Interactive Search**: Fast fuzzy search with a terminal UI for browsing your library
-- **Semantic Search**: Vector embedding-based search with LLM analysis for finding relevant papers
-- **PDF Management**: Automatic PDF storage and organization with quick access
-- **Clipboard Integration**: Copy BibTeX entries directly to clipboard
-- **Database Storage**: SQLite backend with deduplication and efficient retrieval
+`bib` transforms how researchers manage their paper collections by combining traditional bibliography management with modern language understanding. Beyond simple keyword matching, it understands the conceptual relationships between papers, automatically extracts structured citations, and can analyze paper contents to answer specific research questions.
+
+## Key Features
+
+### Intelligent Paper Management
+
+- **Automatic BibTeX Extraction**: Extracts complete citation information from PDFs using language models, with fallback to DOI resolution when available
+- **Content-Based Deduplication**: Identifies duplicate papers even when metadata differs
+- **Smart PDF Organization**: Automatically stores and organizes PDFs with consistent naming
+
+### Advanced Search Capabilities
+
+- **Interactive Fuzzy Search**: Real-time search interface with vim-style navigation
+- **Semantic Search**: Find conceptually related papers using vector embeddings and similarity metrics
+- **Deep Content Analysis**: Query paper contents for specific methodologies, results, or concepts
+
+### Seamless Workflow Integration
+
+- **Multiple Input Sources**: Import from arXiv, direct URLs, local files, or clipboard
+- **BibTeX Export**: One-key copy to clipboard for LaTeX integration
+- **Browser and System Integration**: Open PDFs in your preferred viewer
 
 ## Installation
 
-### Prerequisites
-
-- A Google API key with Gemini access
-
-### Homebrew (Recommended)
-
-[![Homebrew](https://img.shields.io/badge/homebrew-tap-orange.svg)](https://github.com/antonio-leitao/homebrew-taps)
+### Via Homebrew
 
 ```bash
 brew install antonio-leitao/taps/bib
@@ -43,160 +51,218 @@ brew install antonio-leitao/taps/bib
 
 ### From Source
 
-Requires Rust 1.70 or higher:
+Requires Rust 1.70+
 
 ```bash
 git clone https://github.com/antonio-leitao/bib.git
 cd bib
 cargo build --release
+cargo install --path .
 ```
 
-### Setup
+### Configuration
 
-Create a `.env` file in your home directory or project root:
+Set up your Google API key for AI features:
 
 ```bash
-GOOGLE_API_KEY=your_gemini_api_key_here
+echo "GOOGLE_API_KEY=your_api_key_here" >> ~/.env
 ```
 
 ## Usage
 
 ### Adding Papers
 
-Add a paper from various sources:
+Import papers from various sources:
 
 ```bash
-# From arXiv URL
-bib add "https://arxiv.org/abs/2301.00001"
+# From arXiv
+bib add https://arxiv.org/abs/2301.00001
 
 # From direct PDF URL
-bib add "https://example.com/paper.pdf"
+bib add https://proceedings.mlr.press/v139/paper.pdf
 
-# From local PDF file
-bib add /path/to/paper.pdf
+# From local file
+bib add ~/Downloads/paper.pdf
 
-# From clipboard (automatically detects URL or path)
+# From clipboard (auto-detects URL or path)
 bib add
 
-# With notes
-bib add "https://arxiv.org/abs/2301.00001" -n "Important for my thesis"
+# With annotations
+bib add https://arxiv.org/abs/2301.00001 -n "Foundational work on attention mechanisms"
 ```
 
-The tool will:
+### Searching Your Library
 
-1. Download the PDF (if from URL)
-2. Extract BibTeX using AI or DOI lookup
-3. Generate vector embeddings for semantic search
-4. Store the paper and PDF locally
+#### Interactive Search
 
-### Interactive Search
-
-Launch the interactive search interface:
+Launch the terminal interface for browsing:
 
 ```bash
-bib search
-
-# Limit displayed results
-bib search -n 20
+bib          # Quick launch
+bib search   # Explicit command
 ```
 
-**Search Mode Commands:**
+**Navigation:**
 
-- Type to search papers
-- `Enter` or `Tab`: Switch to browse mode
-- `Esc`: Quit
+- Search mode: Type to filter papers in real-time
+- `Tab`/`Enter`: Switch to browse mode
+- `j`/`k` or arrows: Navigate results
+- `Enter`: Open PDF
+- `y`: Copy BibTeX citation
+- `d`: Delete paper
+- `Esc`: Exit
 
-**Browse Mode Commands:**
+#### Semantic Search
 
-- `j`/`↓`: Move down
-- `k`/`↑`: Move up
-- `Enter`: Open PDF with default viewer
-- `o`: Open PDF in browser
-- `y`: Copy BibTeX to clipboard
-- `d`: Delete paper (with confirmation)
-- `Tab`: Return to search mode
-- `q` or `Esc`: Quit
-
-### Semantic Search with Analysis
-
-Find papers using natural language queries and AI analysis:
+Find papers by concept rather than keywords:
 
 ```bash
-# Search with semantic understanding
-bib find "papers about transformer architectures in computer vision"
-
-# Limit papers analyzed (default 20)
-bib find "applications of topological data analysis" -n 10
+bib find "transformer architectures in computer vision"
+bib find "statistical methods for causal inference" -n 15
+bib find "protein folding predictions" -t 0.8  # Higher threshold for precision
 ```
 
-This command:
+#### Deep Content Analysis
 
-1. Generates a query embedding
-2. Finds semantically similar papers using vector search
-3. Uploads top papers to Gemini for detailed analysis
-4. Returns structured analysis with relevance scores and key findings
+Analyze paper contents to answer specific questions:
 
-### Database Statistics
+```bash
+bib scan "experimental results on ImageNet"
+bib scan "papers comparing supervised vs self-supervised learning"
+bib scan "applications of graph neural networks" -n 25
+```
 
-View storage statistics:
+### Managing Your Library
+
+View statistics:
 
 ```bash
 bib stats
 ```
 
-## Data Storage
+## Architecture
 
-Bib stores data in your home directory:
+### Storage Layer
+
+Papers and metadata are stored in SQLite with companion PDF storage:
 
 ```
 ~/.bib/
-├── papers.db       # SQLite database with metadata and embeddings
-└── pdfs/          # PDF files organized by paper ID
+├── papers.db      # Metadata, embeddings, and indices
+└── pdfs/          # Organized PDF collection
 ```
 
-## Architecture
+### Technical Components
 
-### Core Components
+The system leverages several sophisticated techniques:
 
-- **BibTeX Parser**: Robust parsing with content-based deduplication
-- **Gemini Integration**:
-  - BibTeX extraction from PDFs
-  - Paper summarization for embeddings
-  - Multi-paper analysis for complex queries
-- **Vector Search**: Efficient k-nearest neighbor search with normalized embeddings
-- **Storage Layer**: SQLite with support for papers and embeddings
+- **Vector Embeddings**: 768-dimensional representations capture semantic meaning
+- **Content Processing**: Multi-stage pipeline for text extraction and analysis
+- **Similarity Search**: Efficient k-NN search with configurable thresholds
+- **Structured Extraction**: Schema-guided extraction ensures consistent metadata
 
-### Key Technologies
+### Language Model Integration
 
-- **Database**: SQLite with full-text search
-- **AI/ML**: Google Gemini for NLP tasks
-- **Embeddings**: 768-dimensional vectors for semantic similarity
-- **UI**: Terminal-based interface with real-time fuzzy search
-- **PDF Processing**: Automatic download, storage, and retrieval
+The tool integrates with Google's Gemini models for:
+
+- Citation extraction from unstructured PDFs
+- Document summarization for embedding generation
+- Multi-document analysis and synthesis
+- Query understanding and expansion
+
+## Examples
+
+### Research Workflow
+
+```bash
+# Monday: Found interesting paper on Twitter
+bib add https://arxiv.org/abs/2401.00001
+
+# Tuesday: Import papers from bibliography
+bib add paper1.pdf
+bib add paper2.pdf
+
+# Wednesday: Find related work
+bib find "similar approaches to variational inference"
+
+# Thursday: Investigate specific methodology
+bib scan "papers using contrastive learning for embeddings"
+
+# Friday: Export citations for paper
+bib search  # Interactive search, press 'y' to copy citations
+```
+
+### Building a Reading List
+
+```bash
+# Find foundational papers
+bib find "seminal work on neural networks" -n 20
+
+# Find recent developments
+bib find "2024 advances in large language models"
+
+# Find papers with specific datasets
+bib scan "experiments on COCO dataset"
+```
+
+## Performance Considerations
+
+- **Embedding Generation**: First-time paper import generates embeddings (2-5 seconds)
+- **Semantic Search**: Near-instantaneous once embeddings are cached
+- **Content Analysis**: Processes ~5-10 papers per minute depending on length
+- **Storage**: Approximately 50-100KB per paper including embeddings
 
 ## Troubleshooting
 
-### Common Issues
+### API Key Issues
 
-**API Key Not Found**
+If you encounter API errors:
 
-```
-Error: GOOGLE_API_KEY not found in environment variables
-```
+1. Verify your API key is set: `echo $GOOGLE_API_KEY`
+2. Check API quotas in Google Cloud Console
+3. Ensure Gemini API is enabled for your project
 
-Solution: Ensure your `.env` file contains a valid Gemini API key.
+### Import Failures
 
-**PDF Download Failures**
+Some publishers restrict automated downloads. Workarounds:
 
-- Some publishers block automated downloads
-- Try downloading manually and use the local file path
+- Download manually and import the local file
 - Check if the paper is available on arXiv
+- Use institutional access through your browser
 
-**Database Errors**
+### Search Performance
 
-- Ensure `~/.bib/` directory has write permissions
-- Check disk space availability
+For large libraries (1000+ papers):
+
+- Use higher thresholds (`-t 0.8`) for faster filtering
+- Limit initial results (`-n 10`) then refine
+- Consider the trade-off between recall and precision
+
+## Contributing
+
+Contributions are welcome. Please ensure:
+
+- Code follows Rust conventions (`cargo fmt`, `cargo clippy`)
+- Tests pass (`cargo test`)
+- Documentation is updated for new features
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License. See LICENSE file for details.
+
+## Acknowledgments
+
+Built with:
+
+- [biblatex-rs](https://github.com/typst/biblatex) for BibTeX parsing
+- [Google Gemini](https://ai.google.dev/) for language understanding
+- [sqlite](https://www.sqlite.org/) for reliable local storage
+- The Rust ecosystem for performance and reliability
+
+## Author
+
+Antonio Leitao
+
+---
+
+For bug reports and feature requests, please use the [issue tracker](https://github.com/antonio-leitao/bib/issues).

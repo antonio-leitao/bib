@@ -1,14 +1,16 @@
 use indicatif::{ProgressBar, ProgressStyle};
+use std::error::Error;
 use std::time::Duration;
 
 pub struct StatusUI;
 
 impl StatusUI {
     // Status symbols
-    const SUCCESS: &'static str = "✓";
-    const WARNING: &'static str = "⚠";
-    const ERROR: &'static str = "✗";
-    const INFO: &'static str = "•";
+    pub const SUCCESS: &'static str = "✓";
+    pub const WARNING: &'static str = "⚠";
+    pub const ERROR: &'static str = "✗";
+    pub const CAUSE: &'static str = "└─";
+    pub const INFO: &'static str = "•";
 
     pub fn success(message: &str) {
         println!("   {} {}", Self::SUCCESS, message);
@@ -24,6 +26,19 @@ impl StatusUI {
 
     pub fn info(message: &str) {
         println!("   {} {}", Self::INFO, message);
+    }
+    /// Renders a structured error, including its source chain.
+    /// This is generic over any type that implements `std::error::Error`.
+    pub fn render_error<E: Error>(err: E) {
+        // Print the primary error message using the existing style
+        println!("      {} {}", Self::ERROR, err);
+
+        // Iterate through the source chain and print each cause
+        let mut source = err.source();
+        while let Some(cause) = source {
+            println!("        {} Caused by: {}", Self::CAUSE, cause);
+            source = cause.source();
+        }
     }
 
     // Simple spinner
@@ -127,9 +142,4 @@ impl StatusUI {
             format!("{} bytes", bytes)
         }
     }
-}
-
-// Legacy function for compatibility
-pub fn error_message(err: &str) {
-    StatusUI::error(err);
 }
