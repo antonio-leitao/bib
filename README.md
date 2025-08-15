@@ -65,7 +65,7 @@ cargo install --path .
 Set up your Google API key for AI features:
 
 ```bash
-echo "GOOGLE_API_KEY=your_api_key_here" >> ~/.env
+echo "GEMINI_KEY=your_api_key_here" >> ~/.env
 ```
 
 ## Usage
@@ -218,9 +218,8 @@ bib scan "experiments on COCO dataset"
 
 If you encounter API errors:
 
-1. Verify your API key is set: `echo $GOOGLE_API_KEY`
-2. Check API quotas in Google Cloud Console
-3. Ensure Gemini API is enabled for your project
+1. Verify your API key is set: `echo $GEMINI_KEY`
+2. Check API quotas altoguth `bib` makes sure to be within free-tier quotas
 
 ### Import Failures
 

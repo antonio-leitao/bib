@@ -191,7 +191,7 @@ async fn upload_file(
 /// Retrieves the API key from the environment.
 fn get_api_key() -> Result<String, AiError> {
     dotenvy::dotenv().ok();
-    std::env::var("GOOGLE_API_KEY").map_err(|_| AiError::ApiKeyMissing)
+    std::env::var("GEMINI_KEY").map_err(|_| AiError::ApiKeyMissing)
 }
 
 // --- Public API Functions ---
@@ -577,8 +577,7 @@ pub struct Gemini {
 
 impl Gemini {
     pub fn new() -> Result<Self, AiError> {
-        dotenvy::dotenv().ok();
-        let api_key = std::env::var("GOOGLE_API_KEY").map_err(|_| AiError::ApiKeyMissing)?;
+        let api_key = get_api_key()?;
 
         Ok(Self {
             client: Client::new(),

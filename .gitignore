@@ -4,3 +4,5 @@ Makefile
 bib.tar.gz
 /.jina_cache
 Cargo.lock
+.DS_Store
+assets/demo.tape

@@ -323,7 +323,7 @@ impl<'a> SemanticSearchUI<'a> {
             let desc = cmd[colon_pos + 1..].trim();
 
             format!(
-                "{}{:>9} • {}{}{:<9}{}",
+                "{}{:>7} • {}{}{:<7}{}",
                 color::Fg(color::Rgb(83, 110, 122)),
                 key,
                 color::Fg(color::Reset),
@@ -334,7 +334,7 @@ impl<'a> SemanticSearchUI<'a> {
         } else {
             // No colon, treat as description only
             format!(
-                "{:>9}{}{}{}",
+                "{:>7}{}{}{}",
                 "",
                 color::Fg(color::Rgb(46, 60, 68)),
                 cmd,
@@ -438,7 +438,7 @@ impl<'a> SemanticSearchUI<'a> {
             Some(MessageState::Prompt { .. }) => {
                 writeln!(
                     self.stdout,
-                    "  {}{:>9} • {}{}{:<9}{} {}{:>9} • {}{}{:<9}{}\r",
+                    "  {}{:>7} • {}{}{:<7}{} {}{:>7} • {}{}{:<7}{}\r",
                     color::Fg(color::Rgb(83, 110, 122)),
                     "Y",
                     color::Fg(color::Reset),

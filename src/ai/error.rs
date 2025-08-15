@@ -2,7 +2,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum AiError {
-    #[error("GOOGLE_API_KEY environment variable not set")]
+    #[error("GEMINI_KEY environment variable not set")]
     ApiKeyMissing,
 
     #[error("Network error: {0}")]
