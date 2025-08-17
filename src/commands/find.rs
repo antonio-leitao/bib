@@ -1,6 +1,3 @@
-mod error;
-pub use error::ScanError;
-
 use crate::ai::{Gemini, PaperAnalysis};
 use crate::core::{Embedding, Paper};
 use crate::pdf::PdfStorage;
@@ -14,9 +11,28 @@ use std::sync::Arc;
 use std::time::Duration;
 use termion;
 use termion::color;
+use thiserror::Error;
 use tokio::fs;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
+
+#[derive(Error, Debug)]
+pub enum FindError {
+    #[error("Storage error: {0}")]
+    Storage(#[from] crate::storage::StorageError),
+
+    #[error("AI processing error: {0}")]
+    Ai(#[from] crate::ai::AiError),
+
+    #[error("PDF handling error: {0}")]
+    Pdf(#[from] crate::pdf::PdfError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("No papers found matching criteria")]
+    NoPapersFound,
+}
 
 #[derive(Debug)]
 struct AnalysisResult {
@@ -131,7 +147,7 @@ pub async fn execute(
     query: &str,
     limit: usize,
     threshold: f32,
-) -> Result<(), ScanError> {
+) -> Result<(), FindError> {
     let spinner = StatusUI::spinner("Generating query embedding...");
     let ai = Gemini::new()?;
     let query_vector = ai.generate_query_embedding(query).await?;
@@ -151,7 +167,7 @@ pub async fn execute(
 
     if total_papers == 0 {
         StatusUI::warning("No papers to analyze");
-        return Err(ScanError::NoPapersFound);
+        return Err(FindError::NoPapersFound);
     }
 
     let stagger_delay_ms = match total_papers {

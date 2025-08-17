@@ -1,10 +1,23 @@
-mod error;
-pub use error::BibtexError;
-
 use biblatex::{Bibliography, Chunk, Entry, Person, RetrievalError, Spanned};
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum BibtexError {
+    #[error("Failed to parse BibTeX: {0}")]
+    ParseFailed(String),
+
+    #[error("No entries found in BibTeX")]
+    NoEntries,
+
+    #[error("Missing required field '{field}' in BibTeX entry")]
+    MissingField { field: String },
+
+    #[error("Invalid field value for '{field}': {reason}")]
+    InvalidField { field: String, reason: String },
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BibtexData {

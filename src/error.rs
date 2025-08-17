@@ -9,11 +9,8 @@ pub enum AppError {
     #[error("Search failed: {0}")]
     Search(#[from] crate::commands::search::SearchError),
 
-    #[error("Semantic search failed: {0}")]
+    #[error("Find failed: {0}")]
     Find(#[from] crate::commands::find::FindError),
-
-    #[error("Paper scan failed: {0}")]
-    Scan(#[from] crate::commands::scan::ScanError),
 
     #[error("Storage operation failed: {0}")]
     Storage(#[from] crate::storage::StorageError),

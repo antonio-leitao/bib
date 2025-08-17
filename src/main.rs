@@ -62,27 +62,6 @@ enum Commands {
     },
 
     #[command(
-        about = "Interactive fuzzy search through your papers",
-        long_about = "Interactive fuzzy search through your papers",
-        after_help = "Examples:\n  \
-                     bib search          # Default 10 results\n  \
-                     bib search -n 20    # Show up to 20 results\n\n\
-                     Controls:\n  \
-                     Search mode: Type to filter, Enter/Tab to browse\n  \
-                     Browse mode: j/k to navigate, Enter to open, y to copy BibTeX"
-    )]
-    Search {
-        /// Maximum number of results to display
-        #[arg(
-            short = 'n',
-            long,
-            default_value = "10",
-            help = "Number of results to show"
-        )]
-        limit: usize,
-    },
-
-    #[command(
         about = "Find papers using semantic search",
         long_about = "Find papers using semantic search\n\n\
                      Uses vector embeddings to find conceptually similar papers\n\
@@ -92,10 +71,10 @@ enum Commands {
                      bib find \"applications of topological data analysis\" -n 5\n  \
                      bib find \"deep learning for proteins\" -t 0.8"
     )]
-    Find {
+    Search {
         /// Natural language query describing what you're looking for
         #[clap(value_name = "QUERY")]
-        query: String,
+        query: Option<String>,
 
         /// Maximum papers to retrieve
         #[arg(
@@ -110,7 +89,7 @@ enum Commands {
         #[arg(
             short = 't',
             long,
-            default_value = "0.7",
+            default_value = "0.5",
             help = "Minimum similarity score"
         )]
         threshold: f32,
@@ -122,12 +101,12 @@ enum Commands {
                      Performs comprehensive analysis of paper contents to find\n\
                      specific information, methodologies, or results.",
         after_help = "Examples:\n  \
-                     bib scan \"experimental results on MNIST dataset\"\n  \
-                     bib scan \"papers comparing BERT vs GPT architectures\" -n 15\n  \
-                     bib scan \"statistical methods for time series\" -t 0.75\n\n\
+                     bib find \"experimental results on MNIST dataset\"\n  \
+                     bib find \"papers comparing BERT vs GPT architectures\" -n 15\n  \
+                     bib find \"statistical methods for time series\" -t 0.75\n\n\
                      Note: This command may take longer as it analyzes full paper contents"
     )]
-    Scan {
+    Find {
         /// Research question or topic to investigate
         #[clap(value_name = "QUERY")]
         query: String,
@@ -145,7 +124,7 @@ enum Commands {
         #[arg(
             short = 't',
             long,
-            default_value = "0.7",
+            default_value = "0.5",
             help = "Minimum similarity for inclusion"
         )]
         threshold: f32,
@@ -175,23 +154,22 @@ async fn run_app() -> Result<(), AppError> {
 
     let Some(command) = cli.command else {
         // If no command is given, run the default search
-        commands::search::execute(&mut store, 10)?;
+        commands::search::execute(&mut store, None, 10, 0.5).await?;
         return Ok(());
     };
 
     match command {
         Commands::Add { url, notes } => commands::add::execute(url, notes, &mut store).await?,
-        Commands::Search { limit } => commands::search::execute(&mut store, limit)?,
+        Commands::Search {
+            query,
+            limit,
+            threshold,
+        } => commands::search::execute(&mut store, query, limit, threshold).await?,
         Commands::Find {
             query,
             limit,
             threshold,
         } => commands::find::execute(&mut store, &query, limit, threshold).await?,
-        Commands::Scan {
-            query,
-            limit,
-            threshold,
-        } => commands::scan::execute(&mut store, &query, limit, threshold).await?,
         Commands::Stats => show_stats(&store)?,
     };
 

@@ -1,10 +1,10 @@
-mod error;
-pub use error::SearchError;
-
-use crate::core::Paper;
+use crate::ai::Gemini;
+use crate::core::{Embedding, Paper};
 use crate::pdf::PdfStorage;
 use crate::storage::PaperStore;
 use crate::ui::StatusUI;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::io::{self, Stdout, Write};
 use std::time::{Duration, Instant};
 use sublime_fuzzy::best_match;
@@ -12,6 +12,26 @@ use termion::color;
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum SearchError {
+    #[error("Storage error: {0}")]
+    Storage(#[from] crate::storage::StorageError),
+
+    #[error("UI error: {0}")]
+    Ui(#[from] std::io::Error),
+
+    #[error("PDF handling error: {0}")]
+    Pdf(#[from] crate::pdf::PdfError),
+
+    #[error("AI processing error: {0}")]
+    Ai(#[from] crate::ai::AiError),
+
+    #[error("No results found matching the query")]
+    NoResults,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Mode {
@@ -72,8 +92,13 @@ struct SearchUI<'a> {
 }
 
 impl<'a> SearchUI<'a> {
-    fn init(store: &'a mut PaperStore, limit: usize) -> Result<Self, SearchError> {
-        let papers = store.list_all(None)?;
+    async fn init(
+        store: &'a mut PaperStore,
+        query: Option<String>,
+        limit: usize,
+        threshold: f32,
+    ) -> Result<Self, SearchError> {
+        let papers = load_papers(store, query, limit, threshold).await?;
         let mut stdout = io::stdout().into_raw_mode()?;
         write!(stdout, "{}", termion::cursor::Hide)?;
 
@@ -393,7 +418,7 @@ impl<'a> SearchUI<'a> {
 
         writeln!(
             self.stdout,
-            "{}{}{}{} > {}\r",
+            "{}{}{} > {}{}\r",
             termion::clear::CurrentLine,
             color::Fg(color::Rgb(83, 110, 122)),
             mode_indicator,
@@ -476,10 +501,9 @@ impl<'a> SearchUI<'a> {
             Mode::Search => {
                 // Search mode: only one row of help
                 let row = format!(
-                    "  {} {} {}",
-                    self.format_command("Enter/Tab: Browse"),
-                    self.format_command("Esc: Quit"),
-                    self.format_command("Type to search")
+                    "  {} {}",
+                    self.format_command("Enter/Tab", "Browse"),
+                    self.format_command("Esc", "Quit"),
                 );
                 writeln!(self.stdout, "{}\r", row)?;
                 // Empty second row
@@ -509,21 +533,20 @@ impl<'a> SearchUI<'a> {
                     // First row with 4 columns
                     let row1 = format!(
                         "  {} {} {} {}",
-                        self.format_command("Enter/o: Open"),
-                        self.format_command("Tab: Search"),
-                        self.format_command("j/k: Navigate"),
-                        self.format_command("y: Copy BibTeX")
+                        self.format_command("Enter/o", "Open"),
+                        self.format_command("Tab", "Search"),
+                        self.format_command("j/k", "Navigate"),
+                        self.format_command("y", "Copy BibTeX")
                     );
                     writeln!(self.stdout, "{}\r", row1)?;
 
                     // Second row with 4 columns
                     write!(self.stdout, "{}", termion::clear::CurrentLine)?;
                     let row2 = format!(
-                        "  {} {} {} {}",
-                        self.format_command("d: Delete"),
-                        self.format_command("p: Pull PDF"),
-                        self.format_command("q/Esc: Quit"),
-                        self.format_command("")
+                        "  {} {} {}",
+                        self.format_command("d", "Delete"),
+                        self.format_command("p", "Pull PDF"),
+                        self.format_command("q/Esc", "Quit"),
                     );
                     writeln!(self.stdout, "{}\r", row2)?;
                 }
@@ -540,30 +563,16 @@ impl<'a> SearchUI<'a> {
         Ok(())
     }
     // Helper function to format command help
-    fn format_command(&self, cmd: &str) -> String {
-        if let Some(colon_pos) = cmd.find(':') {
-            let key = cmd[..colon_pos].trim();
-            let desc = cmd[colon_pos + 1..].trim();
-
-            format!(
-                "{}{:>7} • {}{}{:<7}{}",
-                color::Fg(color::Rgb(83, 110, 122)),
-                key,
-                color::Fg(color::Reset),
-                color::Fg(color::Rgb(46, 60, 68)),
-                desc,
-                color::Fg(color::Reset)
-            )
-        } else {
-            // No colon, treat as description only
-            format!(
-                "{:>7}{}{}{}",
-                "",
-                color::Fg(color::Rgb(46, 60, 68)),
-                cmd,
-                color::Fg(color::Reset)
-            )
-        }
+    fn format_command(&self, key: &str, desc: &str) -> String {
+        format!(
+            "{}{:>7} • {}{}{:<8}{}",
+            color::Fg(color::Rgb(83, 110, 122)),
+            key,
+            color::Fg(color::Reset),
+            color::Fg(color::Rgb(46, 60, 68)),
+            desc,
+            color::Fg(color::Reset)
+        )
     }
 
     // Get filtered papers based on current query (with limit)
@@ -629,7 +638,103 @@ fn fuzzy_search_papers<'a>(papers: &'a [Paper], query: &str, limit: usize) -> Ve
         .collect()
 }
 
-pub fn execute(store: &mut PaperStore, limit: usize) -> Result<(), SearchError> {
-    let ui = SearchUI::init(store, limit)?;
+fn similarity_threshold_filter(
+    vectors: Vec<Embedding>,
+    query: &[f32],
+    k: usize,
+    threshold: f32,
+) -> Vec<(u128, f32)> {
+    if vectors.is_empty() || k == 0 {
+        return Vec::new();
+    }
+
+    let mut scores: Vec<_> = vectors
+        .into_iter()
+        .map(|e| (e.id, dotzilla::dot(query, &e.coords)))
+        .collect();
+
+    let k = k.min(scores.len());
+
+    scores.select_nth_unstable_by(k - 1, |a, b| {
+        b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal)
+    });
+
+    scores.truncate(k);
+    scores.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+
+    scores
+        .into_iter()
+        .filter(|(_, sim)| *sim >= threshold)
+        .collect()
+}
+
+async fn try_semantic_rerank(
+    store: &mut PaperStore,
+    query: &str,
+    limit: usize,
+    threshold: f32,
+) -> Result<Vec<Paper>, SearchError> {
+    let spinner = StatusUI::spinner("Generating query embedding...");
+    let ai = Gemini::new()?;
+    let query_vector = ai.generate_query_embedding(query).await?;
+    StatusUI::finish_spinner_success(spinner, "Generated query embedding");
+
+    let spinner = StatusUI::spinner("Searching for similar papers...");
+    let vectors = store.load_all_embeddings()?;
+    let relevant_scores = similarity_threshold_filter(vectors, &query_vector, limit, threshold);
+
+    if relevant_scores.is_empty() {
+        StatusUI::finish_spinner_warning(
+            spinner,
+            &format!("No papers found above threshold {:.2}", threshold),
+        );
+        return Err(SearchError::NoResults);
+    }
+
+    StatusUI::finish_spinner_success(
+        spinner,
+        &format!("Found {} relevant papers", relevant_scores.len()),
+    );
+
+    let id_list: Vec<u128> = relevant_scores.iter().map(|(id, _)| *id).collect();
+    let papers = store.get_by_ids(&id_list)?;
+
+    let papers_by_id: HashMap<u128, Paper> = papers.into_iter().map(|p| (p.id, p)).collect();
+    let papers: Vec<Paper> = id_list
+        .iter()
+        .filter_map(|id| papers_by_id.get(id).cloned())
+        .collect();
+
+    Ok(papers)
+}
+// The function *must* return Result<..., SearchError> for this to work.
+async fn load_papers(
+    store: &mut PaperStore,
+    query: Option<String>,
+    limit: usize,
+    threshold: f32,
+) -> Result<Vec<Paper>, SearchError> {
+    if let Some(query) = query {
+        match try_semantic_rerank(store, &query, limit, threshold).await {
+            Ok(papers) => Ok(papers),
+            Err(SearchError::Ai(_)) => {
+                StatusUI::error("Semantic search failed, falling back to listing all papers");
+                Ok(store.list_all(None)?)
+            }
+            Err(e) => Err(e), // Or just return Err(e) from the function
+        }
+    } else {
+        // The `?` here does the same automatic conversion.
+        Ok(store.list_all(None)?)
+    }
+}
+
+pub async fn execute(
+    store: &mut PaperStore,
+    query: Option<String>,
+    limit: usize,
+    threshold: f32,
+) -> Result<(), SearchError> {
+    let ui = SearchUI::init(store, query, limit, threshold).await?;
     ui.run()
 }
