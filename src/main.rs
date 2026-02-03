@@ -1,81 +1,73 @@
+mod add;
+mod config;
+mod query;
+mod search;
+mod ui;
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use std::process;
-
-mod ai;
-mod bibtex;
-mod commands;
-mod core;
-mod error;
-mod pdf;
-mod storage;
-mod ui;
-
-use error::AppError;
-use pdf::PdfStorage;
-use storage::PaperStore;
+mod database;
+use config::Config;
+use database::CitationDb;
+mod embed;
 use ui::StatusUI;
 
 #[derive(Parser)]
+#[command(name = "bib")]
+#[command(about = "Search papers by how researchers cite them")]
 #[command(
-    author = "Antonio Leitao",
-    version,
-    about = "A research paper manager with AI-powered extraction and semantic search",
-    long_about = "bib - Intelligent bibliography management from the command line\n\n\
-                  Manage your research papers with automatic BibTeX extraction, \n\
-                  semantic search capabilities, and deep content analysis.\n\n\
-                  Quick start:\n  \
-                  bib add https://arxiv.org/abs/2301.00001  # Add paper from URL\n  \
-                  bib                                        # Interactive search\n  \
-                  bib find \"transformer architectures\"       # Semantic search"
+    long_about = "A citation knowledge base that finds papers based on how the research community describes them.\n\nWhen you add papers, bib extracts citation contexts—paragraphs where authors describe other work. When you query, you're searching through these descriptions, finding papers based on how researchers characterize them."
 )]
-#[command(propagate_version = true)]
+#[command(after_help = "Examples:
+  bib add https://arxiv.org/abs/2301.00001
+  bib sync
+  bib query \"attention mechanisms in vision\"
+  bib search")]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     #[command(
-        about = "Add a new paper to your bibliography",
-        long_about = "Add a new paper to your bibliography",
-        after_help = "Examples:\n  \
-                     bib add https://arxiv.org/abs/2301.00001\n  \
-                     bib add paper.pdf\n  \
-                     bib add  # Uses URL/path from clipboard\n  \
-                     bib add https://arxiv.org/abs/2301.00001 -n \"Key paper for chapter 3\""
+        about = "Add a paper to the knowledge base",
+        long_about = "Add a paper to the knowledge base from various sources.\n\nSupported sources:\n  - arXiv URLs (downloads PDF automatically)\n  - Direct PDF URLs\n  - Local PDF file paths\n  - Clipboard (if no argument given, reads URL from clipboard)\n\nThe PDF is downloaded to your configured directory, parsed for text, and citation contexts are extracted and indexed for semantic search.",
+        after_help = "Examples:
+  bib add https://arxiv.org/abs/2301.00001
+  bib add https://example.com/paper.pdf
+  bib add ~/Downloads/paper.pdf
+  bib add                                   # reads URL from clipboard"
     )]
     Add {
         /// URL (arXiv/PDF) or local file path. If omitted, reads from clipboard
         #[clap(value_name = "SOURCE")]
         url: Option<String>,
-
-        /// Add notes to the paper entry
-        #[arg(
-            value_name = "NOTES",
-            short,
-            long,
-            help = "Personal notes about the paper"
-        )]
-        notes: Option<String>,
     },
 
     #[command(
-        about = "Find papers using semantic search",
-        long_about = "Find papers using semantic search\n\n\
-                     Uses vector embeddings to find conceptually similar papers\n\
-                     even when they don't share exact keywords.",
-        after_help = "Examples:\n  \
-                     bib find \"transformer architectures in computer vision\"\n  \
-                     bib find \"applications of topological data analysis\" -n 5\n  \
-                     bib find \"deep learning for proteins\" -t 0.8"
+        about = "Process all PDFs in configured directory",
+        long_about = "Scan the configured PDF directory and process any unindexed papers.\n\nThis is useful for batch-importing papers you've manually added to the PDF directory. Already-processed files are skipped.",
+        after_help = "Example:
+  bib sync"
+    )]
+    Sync,
+
+    #[command(
+        about = "Interactive fuzzy search UI",
+        long_about = "Launch an interactive terminal UI for browsing and opening papers.\n\nFeatures:\n  - Fuzzy search by title as you type\n  - Filter to show only local PDFs with --sources\n  - Open selected paper directly from the UI",
+        after_help = "Examples:
+  bib search
+  bib search -n 50
+  bib search --sources
+
+Keybindings:
+  Type        Filter papers by title
+  Enter       Open selected paper
+  ↑/↓         Navigate results
+  Esc/q       Quit"
     )]
     Search {
-        /// Natural language query describing what you're looking for
-        #[clap(value_name = "QUERY")]
-        query: Option<String>,
-
         /// Maximum papers to retrieve
         #[arg(
             short = 'n',
@@ -85,181 +77,108 @@ enum Commands {
         )]
         limit: usize,
 
-        /// Similarity threshold (0.0-1.0, higher = stricter matching)
-        #[arg(
-            short = 't',
-            long,
-            default_value = "0.5",
-            help = "Minimum similarity score"
-        )]
-        threshold: f32,
+        /// Only show processed papers (local PDFs)
+        #[arg(long)]
+        sources: bool,
     },
 
     #[command(
-        about = "Deep content analysis of papers matching your query",
-        long_about = "Deep content analysis of papers matching your query\n\n\
-                     Performs comprehensive analysis of paper contents to find\n\
-                     specific information, methodologies, or results.",
-        after_help = "Examples:\n  \
-                     bib find \"experimental results on MNIST dataset\"\n  \
-                     bib find \"papers comparing BERT vs GPT architectures\" -n 15\n  \
-                     bib find \"statistical methods for time series\" -t 0.75\n\n\
-                     Note: This command may take longer as it analyzes full paper contents"
+        about = "Search by citation context",
+        long_about = "Search papers using semantic similarity against citation contexts.\n\nThis searches through how researchers describe papers when citing them, not just titles or abstracts. Results are ranked by semantic similarity and optionally reranked using an LLM.",
+        after_help = "Examples:
+  bib query \"attention mechanisms in vision\"
+  bib query \"efficient transformers\" -k 10
+  bib query \"graph neural networks\" --report"
     )]
-    Find {
-        /// Research question or topic to investigate
-        #[clap(value_name = "QUERY")]
-        query: String,
-
-        /// Maximum papers to analyze
-        #[arg(
-            short = 'n',
-            long,
-            default_value = "20",
-            help = "Number of papers to analyze"
-        )]
-        limit: usize,
-
-        /// Similarity threshold for initial filtering
-        #[arg(
-            short = 't',
-            long,
-            default_value = "0.5",
-            help = "Minimum similarity for inclusion"
-        )]
-        threshold: f32,
+    Query {
+        /// Search query string
+        search_query: String,
+        /// Number of results to return
+        #[arg(short = 'k', long, default_value_t = 20)]
+        top_k: usize,
+        /// Generate a research report instead of ranked results
+        #[arg(long)]
+        report: bool,
     },
 
     #[command(
         about = "Show database statistics",
-        long_about = "Show database statistics\n\n\
-                     Displays total papers, storage usage, and database metrics"
+        long_about = "Display statistics about the citation database.\n\nShows:\n  - Database file location\n  - Configured PDF directory\n  - Number of indexed papers\n  - Number of extracted paragraphs\n  - Number of citation contexts",
+        after_help = "Example:
+  bib status"
     )]
-    Stats,
-}
+    Status,
 
-fn get_db_path() -> PathBuf {
-    let mut db_path = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    db_path.push(".bib");
-    std::fs::create_dir_all(&db_path).ok();
-    db_path.push("papers.db");
-    db_path
-}
-
-async fn run_app() -> Result<(), AppError> {
-    let cli = Cli::parse();
-    let db_path = get_db_path();
-
-    let mut store = PaperStore::new(&db_path)?;
-
-    let Some(command) = cli.command else {
-        // If no command is given, run the default search
-        commands::search::execute(&mut store, None, 10, 0.5).await?;
-        return Ok(());
-    };
-
-    match command {
-        Commands::Add { url, notes } => commands::add::execute(url, notes, &mut store).await?,
-        Commands::Search {
-            query,
-            limit,
-            threshold,
-        } => commands::search::execute(&mut store, query, limit, threshold).await?,
-        Commands::Find {
-            query,
-            limit,
-            threshold,
-        } => commands::find::execute(&mut store, &query, limit, threshold).await?,
-        Commands::Stats => show_stats(&store)?,
-    };
-
-    Ok(())
+    #[command(
+        about = "Configure PDF storage directory",
+        long_about = "Set or change the directory where PDFs are stored.\n\nIf you already have papers indexed, they will be migrated to the new location.",
+        after_help = "Example:
+  bib config --pdf-dir ~/Papers"
+    )]
+    Config {
+        #[arg(long)]
+        pdf_dir: PathBuf,
+    },
 }
 
 #[tokio::main]
-async fn main() {
-    if let Err(e) = run_app().await {
-        StatusUI::render_error(e);
-        process::exit(1);
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    if let Commands::Config { pdf_dir } = cli.command {
+        Config::create(pdf_dir)?;
+        return Ok(());
     }
-}
 
-fn show_stats(store: &PaperStore) -> Result<(), AppError> {
-    use termion::color;
+    let cfg = Config::load()?;
+    let mut db = CitationDb::open(Config::database_path()?)?;
+    match cli.command {
+        Commands::Add { url } => {
+            add::run(&cfg, &mut db, url).await?;
+        }
+        Commands::Sync => {
+            add::sync(&cfg, &mut db).await?;
+        }
+        Commands::Search { limit, sources } => {
+            search::run(&cfg, &mut db, limit, sources).await?;
+        }
+        Commands::Query {
+            search_query,
+            top_k,
+            report,
+        } => {
+            query::query(&db, &search_query, top_k, report).await?;
+        }
+        Commands::Status => {
+            let stats = db.stats()?;
+            let db_size = std::fs::metadata(&Config::database_path()?)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            StatusUI::info(&format!("Database: {}", Config::database_path()?.display()));
+            StatusUI::info(&format!("PDF directory: {}", cfg.pdf_dir().display()));
+            println!();
+            StatusUI::info(&format!("Papers:      {:>8}", stats.paper_count));
+            StatusUI::info(&format!("Paragraphs:  {:>8}", stats.paragraph_count));
+            StatusUI::info(&format!("Citations:   {:>8}", stats.citation_count));
+            StatusUI::info(&format!(
+                "Size:        {:>8}",
+                format_file_size(db_size as usize)
+            ));
+        }
 
-    // Get all the stats
-    let count = store.count()?;
-    let db_path = get_db_path();
-    let db_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
-    let pdf_size = PdfStorage::total_storage_size()?;
-    let total_size = db_size + pdf_size;
-
-    // Calculate some additional useful stats
-    let avg_size_per_paper = if count > 0 {
-        total_size / count as u64
-    } else {
-        0
-    };
-
-    println!();
-
-    // Header in the same style as search/find commands
-    println!(
-        "{}{}[DATABASE STATISTICS]{}",
-        termion::clear::CurrentLine,
-        color::Fg(color::Rgb(83, 110, 122)),
-        color::Fg(color::Reset)
-    );
-    println!();
-
-    // Papers count with emphasis
-    println!(
-        "   {} Papers in library: {}{}{}",
-        StatusUI::INFO,
-        color::Fg(color::Rgb(83, 110, 122)),
-        count,
-        color::Fg(color::Reset)
-    );
-
-    // Storage breakdown with subtle coloring
-    println!(
-        "   {} Database: {}{:<12}{} PDFs: {}{}{}",
-        StatusUI::INFO,
-        color::Fg(color::Rgb(83, 110, 122)),
-        StatusUI::format_file_size(db_size as usize),
-        color::Fg(color::Reset),
-        color::Fg(color::Rgb(83, 110, 122)),
-        StatusUI::format_file_size(pdf_size as usize),
-        color::Fg(color::Reset)
-    );
-    // Total with success indicator
-    println!(
-        "   {} Total storage: {}{}{}",
-        StatusUI::INFO,
-        color::Fg(color::Rgb(83, 110, 122)),
-        StatusUI::format_file_size(total_size as usize),
-        color::Fg(color::Reset)
-    );
-    // Average size if meaningful
-    if count > 0 {
-        println!(
-            "   {} Average per paper: {}{}{}",
-            StatusUI::INFO,
-            color::Fg(color::Rgb(83, 110, 122)),
-            StatusUI::format_file_size(avg_size_per_paper as usize),
-            color::Fg(color::Reset)
-        );
+        Commands::Config { .. } => unreachable!(),
     }
-    // Storage location info
-    println!(
-        "   {} Location: {}{}{}",
-        StatusUI::INFO,
-        color::Fg(color::Rgb(83, 110, 122)),
-        db_path.parent().unwrap().display(),
-        color::Fg(color::Reset)
-    );
-
-    println!();
 
     Ok(())
+}
+
+// Format file size utility
+fn format_file_size(bytes: usize) -> String {
+    if bytes > 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes > 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{} bytes", bytes)
+    }
 }

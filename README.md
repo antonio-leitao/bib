@@ -4,46 +4,102 @@
 
 <div align="center">
 <h3 max-width='200px' align="center"><code>bib</code></h3>
-  <p><i>Manage your entire bibliography from the command line<br/>
-  Inspired by the need for better academic paper management tools<br/>
-  Built with Rust</i><br/></p>
+  <p><i>Search papers by how researchers cite them</i></p>
   <p>
    <img alt="Static Badge" src="https://img.shields.io/badge/homebrew-black?style=for-the-badge&logo=homebrew&logoColor=white">
-
   </p>
 </div>
 
-# bib
+A citation knowledge base that lets you find papers based on how the research community describes them—not just their titles or abstracts.
 
-A command-line bibliography manager with intelligent paper extraction, semantic search, and deep content analysis capabilities.
+## The Idea
 
-<p align="center">
-  <img src="assets/demo.gif" alt="bib demo" width="600" align="center">
-</p>
+When researchers cite a paper, they describe it in context: what it does, why it matters, how it relates to their work.
+These citation contexts capture how the community actually thinks about and uses a paper.
 
-## Overview
+**`bib` builds a searchable database of these citation contexts.**
 
-`bib` transforms how researchers manage their paper collections by combining traditional bibliography management with modern language understanding. Beyond simple keyword matching, it understands the conceptual relationships between papers, automatically extracts structured citations, and can analyze paper contents to answer specific research questions.
+When you add a paper, the system extracts every paragraph that cites other work.
+Each paragraph captures how the source paper describes the cited papers.
+When you query, you're searching through these descriptions—finding papers based on how other researchers characterize them.
 
-## Key Features
+### Example
 
-### Intelligent Paper Management
+Say Paper A contains this paragraph:
 
-- **Automatic BibTeX Extraction**: Extracts complete citation information from PDFs using language models, with fallback to DOI resolution when available
-- **Content-Based Deduplication**: Identifies duplicate papers even when metadata differs
-- **Smart PDF Organization**: Automatically stores and organizes PDFs with consistent naming
+> Recent advances in topological data analysis for protein structure [smith2020] have enabled new approaches to understanding folding dynamics.
 
-### Advanced Search Capabilities
+When you query: `"topological data analysis for proteins"`
 
-- **Interactive Fuzzy Search**: Real-time search interface with vim-style navigation
-- **Semantic Search**: Find conceptually related papers using vector embeddings and similarity metrics
-- **Deep Content Analysis**: Query paper contents for specific methodologies, results, or concepts
+The system finds: **smith2020** — because Paper A described it that way.
 
-### Seamless Workflow Integration
+### Why This Works
 
-- **Multiple Input Sources**: Import from arXiv, direct URLs, local files, or clipboard
-- **BibTeX Export**: One-key copy to clipboard for LaTeX integration
-- **Browser and System Integration**: Open PDFs in your preferred viewer
+This is "crowdsourced" citation discovery.
+A single paper's title might not mention "proteins" at all, but if dozens of papers cite it in the context of protein analysis, that pattern emerges.
+The more papers you add, the richer and more accurate the citation contexts become.
+
+## How It Works
+
+### Building the Database
+
+```
+PDF → Extract paragraphs with citations → Embed citation contexts → Store
+```
+
+1. **Add PDFs** from arXiv, URLs, or local files
+2. **Parse** each paper to find paragraphs containing citations
+3. **Embed** each citation context capturing how the source describes the cited work
+4. **Index** everything for fast semantic search
+
+### Querying
+
+```
+Query → Match against citation contexts → LLM reranks → Return cited papers
+```
+
+1. Your query is embedded and matched against stored citation contexts
+2. Results are the _cited papers_ that have been described in ways matching your query
+3. An LLM reranks to identify the most relevant matches
+
+## Commands
+
+### Core Workflow
+
+```bash
+# Add papers to build your citation knowledge base
+bib add https://arxiv.org/abs/2301.00001    # From arXiv
+bib add https://example.com/paper.pdf        # From URL
+bib add ~/Downloads/paper.pdf                # Local PDF
+bib add                                      # From clipboard
+
+# Batch process a directory of PDFs
+bib sync ~/Papers/
+
+# Search by citation context (the main feature)
+bib query "topological methods for protein folding"
+bib query "attention mechanisms in vision" -n 20
+
+# Interactive fuzzy search UI
+bib search
+```
+
+### Navigation (Interactive Search)
+
+- Type to filter papers in real-time
+- `Tab`/`Enter`: Switch to browse mode
+- `j`/`k` or arrows: Navigate results
+- `Enter`: Open PDF/Url
+- `p`: Copy PDF to location
+- `d`: Delete paper
+- `Esc`: Exit
+
+### Utilities
+
+```bash
+bib status    # Database statistics
+bib config    # Setup storage directories
+```
 
 ## Installation
 
@@ -66,201 +122,23 @@ cargo install --path .
 
 ### Configuration
 
-Set up your Google API key for AI features:
+Set up your Gemini API key:
 
 ```bash
-echo "GEMINI_KEY=your_api_key_here" >> ~/.env
+export GEMINI_KEY=your_api_key_here
 ```
 
-## Usage
+Or add to your shell profile for persistence.
 
-### Adding Papers
+## Technical Notes
 
-Import papers from various sources:
-
-```bash
-# From arXiv
-bib add https://arxiv.org/abs/2301.00001
-
-# From direct PDF URL
-bib add https://proceedings.mlr.press/v139/paper.pdf
-
-# From local file
-bib add ~/Downloads/paper.pdf
-
-# From clipboard (auto-detects URL or path)
-bib add
-
-# With annotations
-bib add https://arxiv.org/abs/2301.00001 -n "Foundational work on attention mechanisms"
-```
-
-### Searching Your Library
-
-#### Interactive Search
-
-Launch the terminal interface for browsing:
-
-```bash
-bib          # Quick launch
-bib search   # Explicit command
-```
-
-**Navigation:**
-
-- Search mode: Type to filter papers in real-time
-- `Tab`/`Enter`: Switch to browse mode
-- `j`/`k` or arrows: Navigate results
-- `Enter`: Open PDF
-- `y`: Copy BibTeX citation
-- `d`: Delete paper
-- `Esc`: Exit
-
-#### Semantic Search
-
-Find papers by concept rather than keywords:
-
-```bash
-bib find "transformer architectures in computer vision"
-bib find "statistical methods for causal inference" -n 15
-bib find "protein folding predictions" -t 0.8  # Higher threshold for precision
-```
-
-#### Deep Content Analysis
-
-Analyze paper contents to answer specific questions:
-
-```bash
-bib scan "experimental results on ImageNet"
-bib scan "papers comparing supervised vs self-supervised learning"
-bib scan "applications of graph neural networks" -n 25
-```
-
-### Managing Your Library
-
-View statistics:
-
-```bash
-bib stats
-```
-
-## Architecture
-
-### Storage Layer
-
-Papers and metadata are stored in SQLite with companion PDF storage:
-
-```
-~/.bib/
-├── papers.db      # Metadata, embeddings, and indices
-└── pdfs/          # Organized PDF collection
-```
-
-### Technical Components
-
-The system leverages several sophisticated techniques:
-
-- **Vector Embeddings**: 768-dimensional representations capture semantic meaning
-- **Content Processing**: Multi-stage pipeline for text extraction and analysis
-- **Similarity Search**: Efficient k-NN search with configurable thresholds
-- **Structured Extraction**: Schema-guided extraction ensures consistent metadata
-
-### Language Model Integration
-
-The tool integrates with Google's Gemini models for:
-
-- Citation extraction from unstructured PDFs
-- Document summarization for embedding generation
-- Multi-document analysis and synthesis
-- Query understanding and expansion
-
-## Examples
-
-### Research Workflow
-
-```bash
-# Monday: Found interesting paper on Twitter
-bib add https://arxiv.org/abs/2401.00001
-
-# Tuesday: Import papers from bibliography
-bib add paper1.pdf
-bib add paper2.pdf
-
-# Wednesday: Find related work
-bib find "similar approaches to variational inference"
-
-# Thursday: Investigate specific methodology
-bib scan "papers using contrastive learning for embeddings"
-
-# Friday: Export citations for paper
-bib search  # Interactive search, press 'y' to copy citations
-```
-
-### Building a Reading List
-
-```bash
-# Find foundational papers
-bib find "seminal work on neural networks" -n 20
-
-# Find recent developments
-bib find "2024 advances in large language models"
-
-# Find papers with specific datasets
-bib scan "experiments on COCO dataset"
-```
-
-## Performance Considerations
-
-- **Embedding Generation**: First-time paper import generates embeddings (2-5 seconds)
-- **Semantic Search**: Near-instantaneous once embeddings are cached
-- **Content Analysis**: Processes ~5-10 papers per minute depending on length
-- **Storage**: Approximately 50-100KB per paper including embeddings
-
-## Troubleshooting
-
-### API Key Issues
-
-If you encounter API errors:
-
-1. Verify your API key is set: `echo $GEMINI_KEY`
-2. Check API quotas altoguth `bib` makes sure to be within free-tier quotas
-
-### Import Failures
-
-Some publishers restrict automated downloads. Workarounds:
-
-- Download manually and import the local file
-- Check if the paper is available on arXiv
-- Use institutional access through your browser
-
-### Search Performance
-
-For large libraries (1000+ papers):
-
-- Use higher thresholds (`-t 0.8`) for faster filtering
-- Limit initial results (`-n 10`) then refine
-- Consider the trade-off between recall and precision
-
-## Contributing
-
-Contributions are welcome. Please ensure:
-
-- Code follows Rust conventions (`cargo fmt`, `cargo clippy`)
-- Tests pass (`cargo test`)
-- Documentation is updated for new features
+- **PDF Parsing**: Uses [Grobid](https://github.com/kermitt2/grobid) for structured extraction of citations and paragraphs
+- **Embeddings & Reranking**: Google Gemini for semantic embeddings and LLM-based reranking
+- **Storage**: SQLite database with companion PDF storage
 
 ## License
 
 MIT License. See LICENSE file for details.
-
-## Acknowledgments
-
-Built with:
-
-- [biblatex-rs](https://github.com/typst/biblatex) for BibTeX parsing
-- [Google Gemini](https://ai.google.dev/) for language understanding
-- [sqlite](https://www.sqlite.org/) for reliable local storage
-- The Rust ecosystem for performance and reliability
 
 ## Author
 

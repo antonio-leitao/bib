@@ -1,21 +1,64 @@
-use super::error::{AddError, DownloadError, InputError};
-use super::sources::{ArxivApi, CrossRefApi};
-use crate::ai::Gemini;
-use crate::bibtex::BibtexParser;
 use crate::ui::StatusUI;
 use arboard::Clipboard;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use thiserror::Error;
 use url::Url;
-
 const ARXIV_DOMAINS: &[&str] = &["arxiv.org", ".arxiv.org"];
 
-#[derive(Debug)]
-pub struct PdfSource {
-    pub bytes: Vec<u8>,
-    pub arxiv_id: Option<String>,
+#[derive(Error, Debug)]
+pub enum InputError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Clipboard error: {0}")]
+    Clipboard(#[from] arboard::Error),
+
+    #[error("Clipboard is empty")]
+    EmptyClipboard,
+
+    #[error("Invalid arXiv URL: {0}")]
+    InvalidArxivUrl(String),
+
+    #[error("URL does not point to a PDF: {0}")]
+    NotPdfUrl(String),
+
+    #[error("Path does not point to a PDF file: {}", .0.display())]
+    NotPdfPath(PathBuf),
+
+    #[error("Invalid URL: {0}")]
+    InvalidUrl(String),
+
+    #[error("Download failed: {0}")]
+    Download(#[from] DownloadError),
+}
+
+#[derive(Error, Debug)]
+pub enum DownloadError {
+    #[error("Network error: {0}")]
+    Network(#[from] reqwest::Error),
+
+    #[error("Access forbidden (HTTP 403) - authentication may be required")]
+    Forbidden,
+
+    #[error("Resource not found (HTTP 404)")]
+    NotFound,
+
+    #[error("Authentication required (HTTP 401)")]
+    Unauthorized,
+
+    #[error("Rate limited (HTTP 429) - try again later")]
+    RateLimited,
+
+    #[error("HTTP {code}: {message}")]
+    HttpError { code: u16, message: String },
+}
+
+pub enum PdfSource {
+    Online,
+    Path(PathBuf),
 }
 
 #[derive(Debug, PartialEq)]
@@ -28,7 +71,7 @@ enum InputType {
 pub struct PdfHandler;
 
 impl PdfHandler {
-    pub async fn get_pdf_source(input: Option<String>) -> Result<PdfSource, AddError> {
+    pub async fn get_pdf_source(input: Option<String>) -> Result<(Vec<u8>, PdfSource), InputError> {
         let input = match input {
             Some(input) => input,
             None => Self::get_clipboard_content()?,
@@ -38,12 +81,12 @@ impl PdfHandler {
         Self::fetch_pdf_source(input_type).await
     }
 
-    fn get_clipboard_content() -> Result<String, AddError> {
+    fn get_clipboard_content() -> Result<String, InputError> {
         let mut clipboard = Clipboard::new()?;
         let text = clipboard.get_text()?;
 
         if text.trim().is_empty() {
-            return Err(AddError::EmptyClipboard);
+            return Err(InputError::EmptyClipboard);
         }
 
         Ok(text)
@@ -96,7 +139,7 @@ impl PdfHandler {
                 .map_or(false, |ext| ext.to_ascii_lowercase() == "pdf")
     }
 
-    async fn fetch_pdf_source(input_type: InputType) -> Result<PdfSource, AddError> {
+    async fn fetch_pdf_source(input_type: InputType) -> Result<(Vec<u8>, PdfSource), InputError> {
         match input_type {
             InputType::ArxivUrl(url) => {
                 let arxiv_id = Self::extract_arxiv_id(&url)?;
@@ -104,27 +147,17 @@ impl PdfHandler {
 
                 let pdf_url = format!("https://arxiv.org/pdf/{}.pdf", arxiv_id);
                 let bytes = Self::download_pdf(&pdf_url).await?;
-
-                Ok(PdfSource {
-                    bytes,
-                    arxiv_id: Some(arxiv_id),
-                })
+                Ok((bytes, PdfSource::Online))
             }
             InputType::PdfUrl(url) => {
                 StatusUI::info("Source: PDF URL");
                 let bytes = Self::download_pdf(&url).await?;
-                Ok(PdfSource {
-                    bytes,
-                    arxiv_id: None,
-                })
+                Ok((bytes, PdfSource::Online))
             }
             InputType::PdfPath(path) => {
                 StatusUI::info(&format!("Source: local file: {}", path.display()));
                 let bytes = Self::read_pdf_file(&path)?;
-                Ok(PdfSource {
-                    bytes,
-                    arxiv_id: None,
-                })
+                Ok((bytes, PdfSource::Path(path)))
             }
         }
     }
@@ -194,7 +227,7 @@ impl PdfHandler {
         Ok(content.to_vec())
     }
 
-    fn read_pdf_file(path: &Path) -> Result<Vec<u8>, AddError> {
+    fn read_pdf_file(path: &Path) -> Result<Vec<u8>, InputError> {
         let mut file = File::open(path)?;
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
@@ -203,98 +236,5 @@ impl PdfHandler {
         StatusUI::success(&format!("Read {}", size_str));
 
         Ok(contents)
-    }
-}
-
-pub struct BibtexGenerator;
-
-impl BibtexGenerator {
-    pub async fn generate_bibtex(
-        ai: &mut Gemini,
-        pdf_source: PdfSource,
-    ) -> Result<String, AddError> {
-        if let Some(arxiv_id) = pdf_source.arxiv_id {
-            Self::generate_bibtex_arxiv(ai, pdf_source.bytes, &arxiv_id).await
-        } else {
-            Self::generate_bibtex_with_doi_upgrade(ai, pdf_source.bytes).await
-        }
-    }
-
-    async fn generate_bibtex_arxiv(
-        ai: &mut Gemini,
-        pdf_bytes: Vec<u8>,
-        arxiv_id: &str,
-    ) -> Result<String, AddError> {
-        let spinner = StatusUI::spinner("Checking for DOI on arXiv...");
-
-        match ArxivApi::get_doi(arxiv_id).await {
-            Ok(Some(doi)) => {
-                StatusUI::finish_spinner_success(spinner, &format!("Found DOI: {}", doi));
-
-                let crossref_spinner = StatusUI::spinner("Fetching official bibtex from DOI...");
-
-                match CrossRefApi::get_bibtex(&doi).await {
-                    Ok(bibtex) => {
-                        ai.upload_file(pdf_bytes, "application/pdf").await?;
-                        StatusUI::finish_spinner_success(
-                            crossref_spinner,
-                            "Retrieved official bibtex from DOI",
-                        );
-                        return Ok(bibtex);
-                    }
-                    Err(_) => {
-                        StatusUI::finish_spinner_warning(
-                            crossref_spinner,
-                            "DOI lookup failed, using AI fallback",
-                        );
-                    }
-                }
-            }
-            Ok(None) => {
-                StatusUI::finish_spinner_warning(spinner, "No DOI found on arXiv, using AI");
-            }
-            Err(_) => {
-                StatusUI::finish_spinner_warning(spinner, "arXiv lookup failed, using AI fallback");
-            }
-        }
-
-        Self::generate_bibtex_ai(ai, pdf_bytes).await
-    }
-
-    async fn generate_bibtex_with_doi_upgrade(
-        ai: &mut Gemini,
-        pdf_bytes: Vec<u8>,
-    ) -> Result<String, AddError> {
-        let mut bibtex = Self::generate_bibtex_ai(ai, pdf_bytes).await?;
-
-        if let Some(doi) = BibtexParser::extract_doi(&bibtex) {
-            let upgrade_spinner = StatusUI::spinner("Upgrading bibtex with official version...");
-
-            match CrossRefApi::get_bibtex(&doi).await {
-                Ok(official_bibtex) => {
-                    StatusUI::finish_spinner_success(
-                        upgrade_spinner,
-                        "Upgraded to official bibtex from DOI",
-                    );
-                    bibtex = official_bibtex;
-                }
-                Err(_) => {
-                    StatusUI::finish_spinner_warning(
-                        upgrade_spinner,
-                        "Failed to upgrade, using AI version",
-                    );
-                }
-            }
-        }
-
-        Ok(bibtex)
-    }
-
-    async fn generate_bibtex_ai(ai: &mut Gemini, pdf_bytes: Vec<u8>) -> Result<String, AddError> {
-        let spinner = StatusUI::spinner("Extracting bibtex using Gemini AI...");
-        ai.upload_file(pdf_bytes, "application/pdf").await?;
-        let bibtex_entry = ai.generate_bibtex().await?;
-        StatusUI::finish_spinner_success(spinner, "Extracted bibtex using Gemini AI");
-        Ok(bibtex_entry)
     }
 }

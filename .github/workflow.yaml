@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*" # Triggers on v1.0.0, v0.2.5, etc.
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release & Bump Brew
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # --- NEW: Simple Version Extraction ---
+      - name: Set Release Version
+        id: version
+        run: |
+          # github.ref_name is "v1.0.0"
+          echo "TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "VERSION=${{ github.ref_name }}" | sed 's/^v//' >> $GITHUB_ENV
+
+      # Optional: Safety check to make sure you didn't forget to bump Cargo.toml
+      - name: Verify Cargo Version Matches Tag
+        run: |
+          CARGO_VER=$(grep "^version" Cargo.toml | head -1 | awk -F '"' '{print $2}')
+          if [ "$CARGO_VER" != "${{ env.VERSION }}" ]; then
+            echo "❌ Mismatch: Tag is ${{ env.VERSION }} but Cargo.toml is $CARGO_VER"
+            exit 1
+          fi
+
+      - name: Build Binary
+        run: cargo build --release
+
+      - name: Create Archive
+        id: package
+        run: |
+          ARCHIVE_NAME="bib-${{ env.TAG }}-mac.tar.gz"
+          tar -czf "$ARCHIVE_NAME" -C target/release "bib"
+          echo "archive_name=$ARCHIVE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ env.TAG }} \
+            ${{ steps.package.outputs.archive_name }} \
+            --title ${{ env.TAG }} \
+            --generate-notes
+
+      - name: Bump Homebrew Formula
+        uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          formula-name: bib
+          homebrew-tap: antonio-leitao/homebrew-taps
+          download-url: https://github.com/${{ github.repository }}/releases/download/${{ env.TAG }}/${{ steps.package.outputs.archive_name }}
+          commit-message: "bump: bib ${{ env.TAG }}"
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_RELEASE_TOKEN }}

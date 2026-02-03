@@ -1,38 +1,34 @@
 [package]
 name = "bib"
-version = "0.5.21"
-edition = "2021"
+version = "0.6.0"
+edition = "2024"
 authors = ["António Leitão"]
 description = "LLM empowered bibliography management."
 repository = "https://github.com/antonio-leitao/bib"
 license = "Apache-2.0"
 
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-clap = { version = "4.3.21", features = ["derive"] }
-biblatex = "0.8"
-regex = "1.5"
-termion = "1.5.6"
-anyhow = "1.0.75"
-serde = { version = "1.0.189", features = ["derive"] }
-reqwest = { version = "0.11.22", features = ["blocking", "json","cookies" ] }
-bincode = "1.3.3"
-open = "5.0.0"
-quick-xml = { version = "0.31.0", features = ["serde", "serialize", "overlapped-lists"] }
-dotzilla = "0.1.0"
-url = "2.5.4"
-tokio = { version = "1.45.0", features = ["full"] }
-serde_json = "1.0.140"
-thiserror = "2.0.12"
-indicatif = "0.17.11"
-arboard = "3.6.0"
-dotenvy = "0.15.7"
-sha2 = "0.10.9"
-rusqlite = "0.37.0"
-chrono = "0.4.41"
-dirs = "6.0.0"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+reqwest = { version = "0.11", features = ["multipart", "json"] }
+roxmltree = "0.19"
+thiserror = "2.0.18"
+stop-words = "0.8"
+adamastor = "0.3.2"
+serde = { version = "1.0.228", features = ["derive"] }
+schemars = "0.8.0"
+caravela = "0.1.1"
+clap = { version = "4.5.54", features = ["derive"] }
+rusqlite = { version = "0.38.0", features = ["bundled"] }
+directories = "6.0.0"
+dialoguer = "0.12.0"
+shellexpand = "3.1.1"
+toml = "0.9.11"
+arboard = "3.6.1"
+url = "2.5.8"
+indicatif = "0.18.3"
+terminal_size = "0.4"
+termion = "4.0.6"
 sublime_fuzzy = "0.7.0"
-webbrowser = "1.0.5"
-futures = "0.3.31"
+webbrowser = "1"
+futures = "0.3"
