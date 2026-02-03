@@ -3,7 +3,7 @@
 </p>
 
 <div align="center">
-<h3 max-width='200px' align="center"><code>bib</code></h3>
+<h3 max-width='200px' align="center"><code>Crowdsource Bib</code></h3>
   <p><i>Search papers by how researchers cite them</i></p>
   <p>
    <img alt="Static Badge" src="https://img.shields.io/badge/homebrew-black?style=for-the-badge&logo=homebrew&logoColor=white">
