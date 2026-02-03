@@ -1,6 +1,6 @@
 [package]
 name = "bib"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 authors = ["António Leitão"]
 description = "LLM empowered bibliography management."
